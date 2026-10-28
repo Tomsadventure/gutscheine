@@ -123,6 +123,10 @@ form { display: flex; flex-direction: column; gap: 14px; }
 .mono { font-family: var(--mono); letter-spacing: .02em; }
 .zwei { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .fehler { margin: 0; color: var(--rot); font-weight: 700; font-size: 15px; }
+.ki-hinweis { margin: 0; background: var(--gruen-hell); color: var(--gruen-tief); border-radius: 12px; padding: 10px 12px;
+  font-weight: 700; font-size: 15px; }
+.feld-check { display: flex; gap: 10px; align-items: center; font-weight: 700; min-height: 40px; cursor: pointer; }
+.feld-check input { width: 24px; height: 24px; margin: 0; accent-color: var(--gruen); flex: none; }
 /* Speichern bleibt unten sichtbar, auch wenn das Formular länger ist als der Bildschirm */
 #form > .knopf-reihe { position: sticky; bottom: 0; z-index: 2; margin: 0 calc(-1 * var(--gut-r)) 0 calc(-1 * var(--gut-l));
   padding: 12px var(--gut-r) calc(12px + env(safe-area-inset-bottom)) var(--gut-l);
@@ -190,6 +194,8 @@ body[data-view="formular"] .seite { padding-bottom: 0; }
   border-radius: 999px; border: 0; background: rgba(255, 255, 255, .18); color: #fff; font-weight: 800;
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 .scan-knopf.an { background: #fff; color: var(--ink); }
+.scan-knopf.hell { background: #fff; color: var(--ink); flex: 1 1 100%; max-width: 340px; min-height: 52px; font-size: 18px; }
+.scanner.liest .scan-unten { opacity: .4; pointer-events: none; }
 
 /* ---------- An der Kasse ---------- */
 .kasse { position: fixed; inset: 0; z-index: 20; background: #fff; color: #000; overflow-y: auto;

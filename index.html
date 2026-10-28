@@ -16,8 +16,8 @@
   <link rel="icon" href="icons/favicon.png" type="image/png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="preload" href="fonts/Nunito-ExtraBold.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="style.css?v=2026-10-28-a51dc28">
-  <script>window.BUILD = '2026-10-28-a51dc28';</script>
+  <link rel="stylesheet" href="style.css?v=2026-10-28-0ee4c1e">
+  <script>window.BUILD = '2026-10-28-0ee4c1e';</script>
 </head>
 <body data-view="liste">
   <header class="kopf">
@@ -61,6 +61,7 @@
     <!-- ============================================================ Erfassen / Bearbeiten -->
     <section id="formular" class="ansicht" hidden>
       <form id="form" novalidate autocomplete="off">
+        <p id="f-ki" class="ki-hinweis" hidden>Die KI (Google Gemini) hat das Foto gelesen. Bitte prüfen.</p>
         <div id="f-vorschau" class="karte-weiss vorschau" hidden>
           <div id="f-strichcode" class="strichcode"></div>
           <small id="f-gelesen"></small>
@@ -69,7 +70,11 @@
         <label class="feld"><span>Laden oder Anbieter</span>
           <input id="f-laden" list="laeden" required enterkeyhint="next" placeholder="z. B. Migros">
         </label>
-        <div class="zwei">
+        <div class="reiter" id="f-art" role="tablist" aria-label="Art des Gutscheins">
+          <button type="button" role="tab" data-art="wert" aria-selected="true">Guthaben (CHF)</button>
+          <button type="button" role="tab" data-art="rabatt" aria-selected="false">Rabatt</button>
+        </div>
+        <div class="zwei" id="f-wert">
           <label class="feld"><span>Wert (CHF)</span>
             <input id="f-betrag" inputmode="decimal" enterkeyhint="next" placeholder="z. B. 50">
           </label>
@@ -77,13 +82,20 @@
             <input id="f-rest" inputmode="decimal" enterkeyhint="next" placeholder="ganzer Wert">
           </label>
         </div>
+        <label class="feld" id="f-rabatt-feld" hidden><span>Was gibt es?</span>
+          <input id="f-rabatt" enterkeyhint="next" placeholder="z. B. 20 % oder CHF 10 Rabatt">
+        </label>
         <label class="feld"><span>Gültig bis</span>
           <input id="f-bis" type="date">
         </label>
         <label class="feld"><span>Code oder Nummer</span>
           <input id="f-code" class="mono" autocapitalize="characters" spellcheck="false" enterkeyhint="next" placeholder="steht beim Strichcode">
         </label>
-        <label class="feld"><span>Strichcode an der Kasse</span>
+        <label class="feld-check"><input type="checkbox" id="f-online"><span>Nur online einlösbar</span></label>
+        <label class="feld" id="f-shop-feld" hidden><span>Webseite zum Einlösen</span>
+          <input id="f-shop" type="url" inputmode="url" spellcheck="false" enterkeyhint="next" placeholder="z. B. https://www.ifolor.ch">
+        </label>
+        <label class="feld" id="f-format-feld"><span>Strichcode an der Kasse</span>
           <select id="f-format"></select>
         </label>
         <label class="feld"><span>PIN (falls vorhanden)</span>
@@ -125,9 +137,10 @@
         <small id="d-code-tipp">Antippen: gross zeigen für die Kasse</small>
       </button>
       <div class="d-zeile">
-        <button type="button" id="d-kopieren" class="knopf zweit klein">Nummer kopieren</button>
+        <button type="button" id="d-kopieren" class="knopf zweit klein">Code kopieren</button>
         <button type="button" id="d-pin" class="knopf zweit klein">PIN zeigen</button>
         <a id="d-link" class="knopf zweit klein" target="_blank" rel="noopener noreferrer">Link öffnen</a>
+        <a id="d-shop" class="knopf zweit klein" target="_blank" rel="noopener noreferrer">Zum Shop</a>
       </div>
 
       <div class="knopf-reihe">
@@ -163,9 +176,10 @@
     <div class="scan-oben">
       <button type="button" id="scan-zu" class="scan-knopf">Abbrechen</button>
     </div>
-    <p id="scan-hinweis" class="scan-hinweis">Strichcode oder QR-Code ins Feld halten.<br>Etwa eine Handbreit Abstand.</p>
+    <p id="scan-hinweis" class="scan-hinweis">Strichcode oder QR-Code ins Feld halten.<br>Kein Strichcode drauf? «Foto machen».</p>
     <div id="scan-fehler" class="scan-fehler" hidden><p id="scan-fehler-text"></p></div>
     <div class="scan-unten">
+      <button type="button" id="scan-knipsen" class="scan-knopf hell" hidden>Foto machen</button>
       <button type="button" id="scan-licht" class="scan-knopf" hidden>Licht</button>
       <button type="button" id="scan-zoom" class="scan-knopf" hidden>Zoom 2×</button>
       <label class="scan-knopf datei">Foto wählen<input type="file" accept="image/*" id="scan-foto"></label>
@@ -225,9 +239,11 @@
   </datalist>
 
   <noscript><p style="padding:24px;font-family:sans-serif">Diese App braucht JavaScript.</p></noscript>
-  <script src="daten.js?v=2026-10-28-a51dc28" defer></script>
-  <script src="scanner.js?v=2026-10-28-a51dc28" defer></script>
-  <script src="strichcode.js?v=2026-10-28-a51dc28" defer></script>
-  <script src="app.js?v=2026-10-28-a51dc28" defer></script>
+  <script src="firebase-config.js?v=2026-10-28-0ee4c1e" defer></script>
+  <script src="daten.js?v=2026-10-28-0ee4c1e" defer></script>
+  <script src="ki.js?v=2026-10-28-0ee4c1e" defer></script>
+  <script src="scanner.js?v=2026-10-28-0ee4c1e" defer></script>
+  <script src="strichcode.js?v=2026-10-28-0ee4c1e" defer></script>
+  <script src="app.js?v=2026-10-28-0ee4c1e" defer></script>
 </body>
 </html>

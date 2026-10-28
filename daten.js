@@ -1,7 +1,8 @@
 /* Speichert Gutscheine und Fotos auf diesem Gerät (IndexedDB).
    Prototyp: nur dieses Gerät. Für die gemeinsame Liste (Firebase) kommt später eine zweite Fassung mit denselben Funktionen –
    app.js bleibt dann gleich. Ein Gutschein:
-   { id, laden, betrag, rest, code, format, pin, gueltigBis: 'JJJJ-MM-TT', notiz, fotos: [Foto-Id], status: 'aktiv' | 'archiv',
+   { id, laden, art: 'wert' | 'rabatt' (fehlt bei alten = 'wert'), betrag, rest (CHF, bei Rabatt null), rabatt: '20 %',
+     nurOnline, shop: 'https://…', code, format, pin, gueltigBis: 'JJJJ-MM-TT', notiz, fotos: [Foto-Id], status: 'aktiv' | 'archiv',
      verlauf: [{ datum, art: 'erfasst' | 'eingeloest' | 'korrigiert' | 'archiv' | 'aktiv', betrag, rest }], erstellt, geaendert } */
 window.Daten = (function () {
   'use strict';

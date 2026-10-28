@@ -151,11 +151,21 @@ window.Scanner = (function () {
     return treffer[0] || null;
   }
 
+  // «Foto machen»: das aktuelle Kamerabild in voller Grösse (JPEG), für Gutscheine ohne Strichcode.
+  function standbild() {
+    if (!video || !video.videoWidth) return Promise.reject(new Error('Die Kamera zeigt noch nichts.'));
+    const c = document.createElement('canvas');
+    c.width = video.videoWidth;
+    c.height = video.videoHeight;
+    c.getContext('2d').drawImage(video, 0, 0);
+    return new Promise((ok, nein) => c.toBlob(b => (b ? ok(b) : nein(new Error('Foto ging nicht'))), 'image/jpeg', 0.9));
+  }
+
   // Foto für die Ablage verkleinern (JPEG).
   async function verkleinern(blob, max) {
     const c = await aufLeinwand(blob, max, document.createElement('canvas'));
     return new Promise(ok => c.toBlob(b => ok(b || blob), 'image/jpeg', 0.82));
   }
 
-  return { starte, stop, licht, zoom, fotoLesen, verkleinern };
+  return { starte, stop, licht, zoom, fotoLesen, standbild, verkleinern };
 })();

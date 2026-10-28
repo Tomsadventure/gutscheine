@@ -1,12 +1,13 @@
 /* Gutscheine: Liste, Erfassen (Kamera, Foto oder von Hand), einen Gutschein ansehen, an der Kasse zeigen.
-   Speichern: daten.js · Kamera und Lesen: scanner.js · Strichcode zeichnen: strichcode.js */
+   Speichern: daten.js · Kamera und Lesen: scanner.js · Foto mit KI lesen: ki.js · Strichcode zeichnen: strichcode.js */
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
-  const D = window.Daten, S = window.Scanner, B = window.Strichcode;
+  const D = window.Daten, S = window.Scanner, B = window.Strichcode, K = window.KI;
   const BALD_TAGE = 30;        // so viele Tage vor dem Ablauf gilt ein Gutschein als «läuft bald ab»
   const FOTO_MAX = 1600;       // Fotos werden höchstens so breit gespeichert
   const FARBEN = ['#0E7C66', '#2563A8', '#B4542D', '#7A4FB3', '#A8326E', '#3E7D2B', '#94650A', '#2F6F7A'];
+  const SCAN_HINWEIS = 'Strichcode oder QR-Code ins Feld halten.<br>Kein Strichcode drauf? «Foto machen».';
 
   const chfFormat = new Intl.NumberFormat('de-CH', { style: 'currency', currency: 'CHF' });
   const chf = n => chfFormat.format(n || 0);
@@ -53,7 +54,10 @@
 
   // Wie steht es um den Gutschein? k: ok | bald | abgelaufen | archiv
   function lage(g) {
-    if (g.status === 'archiv') return { k: 'archiv', text: g.rest === 0 ? 'Aufgebraucht' : 'Im Archiv' };
+    if (g.status === 'archiv') {
+      const eingeloest = g.verlauf.some(e => e.art === 'eingeloest');
+      return { k: 'archiv', text: g.rest === 0 ? 'Aufgebraucht' : eingeloest && g.rest === null ? 'Eingelöst' : 'Im Archiv' };
+    }
     if (!g.gueltigBis) return { k: 'ok', text: 'Ohne Ablaufdatum' };
     const t = tageBis(g.gueltigBis);
     if (t < 0) return { k: 'abgelaufen', text: 'Abgelaufen am ' + datum(g.gueltigBis) };
@@ -163,9 +167,10 @@
       logo(b.querySelector('.logo'), g.laden);
       b.querySelector('.karte-text b').textContent = g.laden;
       b.querySelector('.karte-text small').textContent = l.text;
-      b.querySelector('.karte-betrag b').textContent = g.rest === null ? 'Gutschein' : chf(g.rest);
-      b.querySelector('.karte-betrag small').textContent =
-        g.betrag !== null && g.rest !== null && g.rest !== g.betrag ? 'von ' + chf(g.betrag) : '';
+      b.querySelector('.karte-betrag b').textContent = g.art === 'rabatt' ? g.rabatt || 'Rabatt'
+        : g.rest === null ? 'Gutschein' : chf(g.rest);
+      b.querySelector('.karte-betrag small').textContent = g.nurOnline ? 'online'
+        : g.betrag !== null && g.rest !== null && g.rest !== g.betrag ? 'von ' + chf(g.betrag) : '';
       b.addEventListener('click', () => zeige('detail', { id: g.id }));
       box.appendChild(b);
     }
@@ -182,8 +187,10 @@
     $('scanner').hidden = false;
     $('scan-fehler').hidden = true;
     $('scanner').classList.remove('mit-fehler');
+    $('scanner').classList.remove('liest');
     $('scan-hinweis').hidden = false;
-    $('scan-licht').hidden = $('scan-zoom').hidden = true;
+    $('scan-hinweis').innerHTML = SCAN_HINWEIS;
+    $('scan-licht').hidden = $('scan-zoom').hidden = $('scan-knipsen').hidden = true;
     $('scan-rahmen').classList.remove('treffer');
     lichtAn = zoomAn = false;
     S.starte($('video'), $('scan-rahmen'), {
@@ -202,7 +209,8 @@
         zoomStufen = f.zoom ? [f.zoom.min || 1, Math.min(2, f.zoom.max)] : null;
         $('scan-zoom').hidden = !zoomStufen;
       },
-    }).catch(e => scanFehler(kameraFehler(e)));
+    }).then(() => { if (ansichtJetzt === 'scan' && $('scan-fehler').hidden) $('scan-knipsen').hidden = false; })
+      .catch(e => scanFehler(kameraFehler(e)));
   }
 
   function schliesseScanner() {
@@ -227,6 +235,7 @@
     $('scan-fehler').hidden = false;
     $('scanner').classList.add('mit-fehler');
     $('scan-hinweis').hidden = true;
+    $('scan-knipsen').hidden = true;
   }
 
   $('scan-zu').addEventListener('click', zurueck);
@@ -241,23 +250,65 @@
     S.zoom(zoomStufen[zoomAn ? 1 : 0]).catch(() => {});
     $('scan-zoom').classList.toggle('an', zoomAn);
   });
-  $('scan-foto').addEventListener('change', async e => {
+  $('scan-foto').addEventListener('change', e => {
     const datei = e.target.files[0];
     e.target.value = '';
-    if (!datei) return;
+    if (datei) fotoVerarbeiten(datei);
+  });
+  $('scan-knipsen').addEventListener('click', async () => {
+    let bild;
+    try { bild = await S.standbild(); } catch (e) { return melde(e.message); }
+    fotoVerarbeiten(bild);
+  });
+
+  // Foto (gewählt oder «Foto machen»): Strichcode suchen und – falls eingerichtet – die KI lesen lassen, dann ins Formular
+  async function fotoVerarbeiten(datei) {
     S.stop();
+    $('scanner').classList.add('liest');
+    $('scan-knipsen').hidden = true;
     $('scan-hinweis').hidden = false;
     $('scan-hinweis').textContent = 'Foto wird gelesen …';
-    let t = null;
-    try { t = await S.fotoLesen(datei); } catch { t = null; }
     const klein = await S.verkleinern(datei, FOTO_MAX).catch(() => null);
-    $('scan-hinweis').innerHTML = 'Strichcode oder QR-Code ins Feld halten.<br>Etwa eine Handbreit Abstand.';
+    let kiFehler = '';
+    const kiLesen = async () => {
+      if (!K.bereit()) return null;
+      $('scan-hinweis').textContent = 'Die KI liest den Gutschein …';
+      try { return await K.lesen(klein || datei); } catch (e) { kiFehler = (e && e.message) || String(e); return null; }
+    };
+    const [t, k] = await Promise.all([S.fotoLesen(datei).catch(() => null), kiLesen()]);
+    $('scanner').classList.remove('liest');
+    $('scan-hinweis').innerHTML = SCAN_HINWEIS;
     if (ansichtJetzt !== 'scan') return;
     entwurf = neuerEntwurf(t ? { code: t.text, gelesen: t.format } : {});
+    if (k) kiUebernehmen(entwurf, k);
     if (klein) entwurf.fotos.push({ blob: klein, url: URL.createObjectURL(klein) });
     zeige('formular', {}, true);
-    melde(t ? 'Code auf dem Foto gefunden' : 'Kein Code auf dem Foto gefunden – bitte die Nummer eintippen');
-  });
+    if (kiFehler) console.warn('KI:', kiFehler);
+    if (k && entwurf.code) return;   // das Formular sagt oben schon «Die KI hat das Foto gelesen»
+    melde(k ? 'Kein Code gefunden – bitte eintippen'
+      : kiFehler ? 'Die KI hat nicht geantwortet – bitte selbst ausfüllen'
+        : t ? 'Code auf dem Foto gefunden' : 'Kein Code auf dem Foto gefunden – bitte die Nummer eintippen');
+  }
+
+  // Was die KI gelesen hat, ins Formular; ein gescannter Strichcode bleibt (der ist genauer)
+  function kiUebernehmen(e, k) {
+    e.ki = true;
+    if (k.laden) e.laden = k.laden;
+    e.art = k.art;
+    if (k.art === 'wert') {
+      const b = betragLesen(k.betrag);
+      if (b) e.betrag = e.rest = b;
+    } else e.rabatt = k.rabatt;
+    e.nurOnline = k.nurOnline;
+    e.shop = k.shop;
+    if (k.gueltigBis) e.gueltigBis = k.gueltigBis;
+    if (k.pin) e.pin = k.pin;
+    if (k.bedingungen) e.notiz = k.bedingungen;
+    if (!e.gelesen && k.code) {
+      e.code = k.code;
+      e.format = k.nurOnline ? '' : B.vorschlag(k.code);
+    }
+  }
   document.addEventListener('visibilitychange', () => {
     if (ansichtJetzt !== 'scan' || !$('scan-fehler').hidden) return;
     if (document.hidden) S.stop(); else oeffneScanner();
@@ -267,13 +318,15 @@
   function neuerEntwurf(von) {
     const code = (von.code || '').trim();
     return {
-      id: null, laden: '', betrag: null, rest: null, gueltigBis: '', pin: '', notiz: '', fotos: [],
+      id: null, laden: '', art: 'wert', betrag: null, rest: null, rabatt: '', gueltigBis: '', pin: '', notiz: '', fotos: [],
+      nurOnline: false, shop: '', ki: false,
       code, gelesen: von.gelesen || '', format: von.gelesen ? B.zeichenbar(von.gelesen) : B.vorschlag(code), formatGewaehlt: false,
     };
   }
   function entwurfVon(g) {
     return {
-      id: g.id, laden: g.laden, betrag: g.betrag, rest: g.rest, gueltigBis: g.gueltigBis, pin: g.pin, notiz: g.notiz, code: g.code,
+      id: g.id, laden: g.laden, art: g.art || 'wert', betrag: g.betrag, rest: g.rest, rabatt: g.rabatt || '', gueltigBis: g.gueltigBis,
+      pin: g.pin, notiz: g.notiz, code: g.code, nurOnline: !!g.nurOnline, shop: g.shop || '', ki: false,
       format: g.format, gelesen: '', formatGewaehlt: true, fotos: (g.fotos || []).map(id => ({ id })),
     };
   }
@@ -285,10 +338,16 @@
     $('f-laden').value = e.laden;
     $('f-betrag').value = zahlText(e.betrag);
     $('f-rest').value = e.rest !== null && e.rest !== e.betrag ? zahlText(e.rest) : '';
+    $('f-rabatt').value = e.rabatt;
     $('f-bis').value = e.gueltigBis;
     $('f-code').value = e.code;
     $('f-pin').value = e.pin;
     $('f-notiz').value = e.notiz;
+    $('f-online').checked = e.nurOnline;
+    $('f-shop').value = e.shop;
+    $('f-ki').hidden = !e.ki;
+    zeigeArt(e.art);
+    $('f-shop-feld').hidden = !e.nurOnline;
     const sel = $('f-format');
     sel.textContent = '';
     sel.add(new Option('Kein Strichcode (nur Nummer)', ''));
@@ -319,10 +378,28 @@
     }, ms);
   }
   $('f-code').addEventListener('input', () => {
-    if (!entwurf.formatGewaehlt && !entwurf.gelesen) $('f-format').value = B.vorschlag($('f-code').value);
+    if (!entwurf.formatGewaehlt && !entwurf.gelesen) $('f-format').value = $('f-online').checked ? '' : B.vorschlag($('f-code').value);
     vorschauBald(250);
   });
   $('f-format').addEventListener('change', () => { entwurf.formatGewaehlt = true; vorschauBald(0); });
+
+  // Guthaben in Franken oder Rabatt (Prozent, «CHF 10 ab 50» …): andere Felder
+  function zeigeArt(art) {
+    entwurf.art = art;
+    for (const b of $('f-art').querySelectorAll('button')) b.setAttribute('aria-selected', b.dataset.art === art);
+    $('f-wert').hidden = art !== 'wert';
+    $('f-rabatt-feld').hidden = art !== 'rabatt';
+  }
+  for (const b of $('f-art').querySelectorAll('button')) b.addEventListener('click', () => zeigeArt(b.dataset.art));
+  // Nur online: Webseite statt Strichcode an der Kasse
+  $('f-online').addEventListener('change', () => {
+    const on = $('f-online').checked;
+    $('f-shop-feld').hidden = !on;
+    if (!entwurf.formatGewaehlt && !entwurf.gelesen) {
+      $('f-format').value = on ? '' : B.vorschlag($('f-code').value);
+      vorschauBald(0);
+    }
+  });
 
   async function zeigeFormFotos() {
     const box = $('f-fotos');
@@ -359,13 +436,18 @@
   $('form').addEventListener('submit', async ev => {
     ev.preventDefault();
     const laden = $('f-laden').value.trim();
-    const betrag = betragLesen($('f-betrag').value);
-    const restEin = betragLesen($('f-rest').value);
+    const art = entwurf.art;
+    const betrag = art === 'wert' ? betragLesen($('f-betrag').value) : null;
+    const restEin = art === 'wert' ? betragLesen($('f-rest').value) : null;
+    const nurOnline = $('f-online').checked;
+    let shop = nurOnline ? $('f-shop').value.trim() : '';
+    if (shop && !/^https?:\/\//i.test(shop)) shop = 'https://' + shop;
     if (!laden) return formFehler('Bitte den Laden oder Anbieter eintragen.', 'f-laden');
     if (betrag === false) return formFehler('Den Wert bitte als Zahl eintragen, z. B. 50 oder 25.50.', 'f-betrag');
     if (restEin === false) return formFehler('«Noch übrig» bitte als Zahl eintragen, z. B. 30 oder 12.50.', 'f-rest');
     const rest = restEin === null ? betrag : restEin;
     if (betrag !== null && rest > betrag) return formFehler('«Noch übrig» ist grösser als der Wert.', 'f-rest');
+    if (shop && !/^https?:\/\/[^\s/]+\.[^\s]+$/i.test(shop)) return formFehler('Die Webseite bitte so eintragen: www.laden.ch', 'f-shop');
 
     $('f-speichern').disabled = true;
     try {
@@ -375,7 +457,8 @@
         : { id: D.neueId(), status: 'aktiv', erstellt: jetzt, verlauf: [{ datum: jetzt, art: 'erfasst', betrag, rest }] };
       if (alt && alt.rest !== rest) g.verlauf.push({ datum: jetzt, art: 'korrigiert', rest });
       Object.assign(g, {
-        laden, betrag, rest, gueltigBis: $('f-bis').value || '', code: $('f-code').value.trim(), format: $('f-format').value,
+        laden, art, betrag, rest, rabatt: art === 'rabatt' ? $('f-rabatt').value.trim() : '', nurOnline, shop,
+        gueltigBis: $('f-bis').value || '', code: $('f-code').value.trim(), format: $('f-format').value,
         pin: $('f-pin').value.trim(), notiz: $('f-notiz').value.trim(), geaendert: jetzt,
       });
       const ids = [];
@@ -402,15 +485,17 @@
     $('d-laden').textContent = g.laden;
     $('d-lage').textContent = l.text;
     $('d-lage').className = 'lage lage-' + l.k;
-    $('d-rest').textContent = g.rest === null ? 'Gutschein' : chf(g.rest);
-    $('d-von').textContent = g.betrag === null ? 'ohne Betrag'
-      : g.rest !== g.betrag ? 'noch übrig von ' + chf(g.betrag) : 'noch übrig';
+    const rabatt = g.art === 'rabatt';
+    $('d-rest').textContent = rabatt ? g.rabatt || 'Rabatt' : g.rest === null ? 'Gutschein' : chf(g.rest);
+    $('d-von').textContent = (rabatt ? 'Rabatt' : g.betrag === null ? 'ohne Betrag'
+      : g.rest !== g.betrag ? 'noch übrig von ' + chf(g.betrag) : 'noch übrig') + (g.nurOnline ? ' · nur online einlösbar' : '');
 
     $('d-code-karte').hidden = !g.code;
     $('d-code').textContent = codeZeigen(g.code || '');
     $('d-strichcode').textContent = '';
     $('d-strichcode').classList.toggle('flaechig', B.flaechig(g.format));
-    $('d-code-tipp').textContent = g.format ? 'Antippen: gross zeigen für die Kasse' : 'Antippen: Nummer gross zeigen';
+    $('d-code-tipp').textContent = g.format ? 'Antippen: gross zeigen für die Kasse'
+      : g.nurOnline ? 'Antippen: Code kopieren' : 'Antippen: Nummer gross zeigen';
     if (g.code && g.format) {
       strichcodeSvg(g.code, g.format).then(s => {
         if (s && ansichtJetzt !== 'liste' && $('d-laden').textContent === g.laden) $('d-strichcode').innerHTML = s;
@@ -422,6 +507,8 @@
     const link = /^https?:\/\//i.test(g.code || '');
     $('d-link').hidden = !link;
     if (link) $('d-link').href = g.code; else $('d-link').removeAttribute('href');
+    $('d-shop').hidden = !g.shop;
+    if (g.shop) $('d-shop').href = g.shop; else $('d-shop').removeAttribute('href');
 
     const archiv = g.status === 'archiv';
     $('d-einloesen').hidden = archiv;
@@ -436,7 +523,8 @@
     for (const e of g.verlauf.slice().reverse()) {
       const li = document.createElement('li');
       const wann = new Date(e.datum).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      const was = e.art === 'erfasst' ? 'Erfasst' + (e.betrag !== null && e.betrag !== undefined ? ', Wert ' + chf(e.betrag) : '')
+      const was = e.art === 'erfasst' ? 'Erfasst' + (e.betrag !== null && e.betrag !== undefined ? ', Wert ' + chf(e.betrag)
+        : g.art === 'rabatt' && g.rabatt ? ', ' + g.rabatt : '')
         : e.art === 'eingeloest' ? (e.betrag ? `${chf(e.betrag)} eingelöst, noch ${chf(e.rest)}` : 'Eingelöst')
           : e.art === 'korrigiert' ? 'Restguthaben geändert' + (e.rest !== null ? ' auf ' + chf(e.rest) : '')
             : e.art === 'archiv' ? 'Ins Archiv gelegt' : 'Wieder aktiv';
@@ -462,15 +550,20 @@
 
   const jetztG = () => alle.find(x => x.id === (history.state && history.state.id));
 
-  $('d-code-karte').addEventListener('click', () => zeige('kasse', { id: jetztG().id }));
-  $('d-kopieren').addEventListener('click', async () => {
+  async function kopiere() {
     try {
       await navigator.clipboard.writeText(jetztG().code);
-      melde('Nummer kopiert');
+      melde('Code kopiert');
     } catch {
       melde('Kopieren geht hier nicht');
     }
+  }
+  // Online-Code ohne Strichcode: an der Kasse braucht ihn niemand – antippen kopiert ihn
+  $('d-code-karte').addEventListener('click', () => {
+    const g = jetztG();
+    if (g.nurOnline && !g.format) kopiere(); else zeige('kasse', { id: g.id });
   });
+  $('d-kopieren').addEventListener('click', kopiere);
   $('d-pin').addEventListener('click', () => {
     const b = $('d-pin');
     b.textContent = b.textContent === 'PIN zeigen' ? 'PIN: ' + jetztG().pin : 'PIN zeigen';
@@ -557,7 +650,7 @@
     $('k-code').classList.toggle('allein', !g.format);
     $('k-pin').hidden = !g.pin;
     $('k-pin').textContent = 'PIN ' + (g.pin || '');
-    $('k-rest').textContent = g.rest === null ? '' : 'Noch übrig: ' + chf(g.rest);
+    $('k-rest').textContent = g.art === 'rabatt' ? g.rabatt || '' : g.rest === null ? '' : 'Noch übrig: ' + chf(g.rest);
     const box = $('k-strichcode');
     box.textContent = '';
     box.className = 'kasse-code' + (B.flaechig(g.format) ? ' flaechig' : '');
