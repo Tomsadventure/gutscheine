@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="de-CH">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="Gutscheine scannen, aufbewahren und an der Kasse zeigen.">
+  <meta name="theme-color" content="#F3F5F4">
+  <meta name="color-scheme" content="light">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Gutscheine">
+  <title>Gutscheine</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/favicon.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="preload" href="fonts/Nunito-ExtraBold.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css?v=2026-10-28-a51dc28">
+  <script>window.BUILD = '2026-10-28-a51dc28';</script>
+</head>
+<body data-view="liste">
+  <header class="kopf">
+    <div class="kopf-innen">
+      <button type="button" id="zurueck" class="kopf-knopf" hidden>‹ Zurück</button>
+      <h1 id="titel">Gutscheine</h1>
+    </div>
+  </header>
+
+  <main class="seite">
+    <!-- ============================================================ Liste -->
+    <section id="liste" class="ansicht">
+      <div id="tipp" class="tipp" hidden>
+        <p id="tipp-text"></p>
+        <div class="tipp-knoepfe">
+          <button type="button" id="tipp-installieren" class="knopf klein" hidden>App installieren</button>
+          <button type="button" id="tipp-zu" class="knopf zweit klein">Verstanden</button>
+        </div>
+      </div>
+
+      <div class="summe">
+        <small>Guthaben</small>
+        <b id="summe-betrag">CHF 0.00</b>
+        <span id="summe-text">Noch keine Gutscheine</span>
+      </div>
+
+      <div class="reiter" role="tablist">
+        <button type="button" role="tab" id="reiter-aktiv" aria-selected="true">Aktiv <span id="anzahl-aktiv"></span></button>
+        <button type="button" role="tab" id="reiter-archiv" aria-selected="false">Archiv <span id="anzahl-archiv"></span></button>
+      </div>
+
+      <input type="search" id="suche" class="suche" placeholder="Suchen: Laden, Notiz, Nummer" autocomplete="off" hidden>
+      <div id="karten" class="karten"></div>
+      <div id="leer" class="leer" hidden>
+        <svg viewBox="0 0 120 80" aria-hidden="true"><rect x="8" y="12" width="104" height="56" rx="10" fill="#fff" stroke="#B9C8C2" stroke-width="3"/><circle cx="8" cy="40" r="9" fill="#F3F5F4" stroke="#B9C8C2" stroke-width="3"/><circle cx="112" cy="40" r="9" fill="#F3F5F4" stroke="#B9C8C2" stroke-width="3"/><path d="M44 26v28M50 26v28M54 26v28M62 26v28M66 26v28M74 26v28M78 26v28" stroke="#5E716A" stroke-width="3"/></svg>
+        <p id="leer-text">Noch keine Gutscheine.<br>Tippe auf «Gutschein scannen».</p>
+      </div>
+      <p class="fuss" id="fuss"></p>
+    </section>
+
+    <!-- ============================================================ Erfassen / Bearbeiten -->
+    <section id="formular" class="ansicht" hidden>
+      <form id="form" novalidate autocomplete="off">
+        <div id="f-vorschau" class="karte-weiss vorschau" hidden>
+          <div id="f-strichcode" class="strichcode"></div>
+          <small id="f-gelesen"></small>
+        </div>
+
+        <label class="feld"><span>Laden oder Anbieter</span>
+          <input id="f-laden" list="laeden" required enterkeyhint="next" placeholder="z. B. Migros">
+        </label>
+        <div class="zwei">
+          <label class="feld"><span>Wert (CHF)</span>
+            <input id="f-betrag" inputmode="decimal" enterkeyhint="next" placeholder="z. B. 50">
+          </label>
+          <label class="feld"><span>Noch übrig (CHF)</span>
+            <input id="f-rest" inputmode="decimal" enterkeyhint="next" placeholder="ganzer Wert">
+          </label>
+        </div>
+        <label class="feld"><span>Gültig bis</span>
+          <input id="f-bis" type="date">
+        </label>
+        <label class="feld"><span>Code oder Nummer</span>
+          <input id="f-code" class="mono" autocapitalize="characters" spellcheck="false" enterkeyhint="next" placeholder="steht beim Strichcode">
+        </label>
+        <label class="feld"><span>Strichcode an der Kasse</span>
+          <select id="f-format"></select>
+        </label>
+        <label class="feld"><span>PIN (falls vorhanden)</span>
+          <input id="f-pin" class="mono" spellcheck="false" enterkeyhint="next">
+        </label>
+        <label class="feld"><span>Notiz</span>
+          <textarea id="f-notiz" rows="2" placeholder="z. B. von Grosi zum Geburtstag"></textarea>
+        </label>
+        <div class="feld">
+          <span>Fotos</span>
+          <div id="f-fotos" class="fotos"></div>
+          <label class="knopf zweit klein datei">Foto hinzufügen<input type="file" accept="image/*" id="f-foto-neu"></label>
+        </div>
+        <p id="f-fehler" class="fehler" role="alert" hidden></p>
+        <div class="knopf-reihe">
+          <button type="button" id="f-abbrechen" class="knopf zweit">Abbrechen</button>
+          <button type="submit" id="f-speichern" class="knopf">Speichern</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- ============================================================ Ein Gutschein -->
+    <section id="detail" class="ansicht" hidden>
+      <div class="d-kopf">
+        <span id="d-logo" class="logo"></span>
+        <div>
+          <h2 id="d-laden"></h2>
+          <p id="d-lage" class="lage"></p>
+        </div>
+      </div>
+      <div class="d-betrag">
+        <b id="d-rest"></b>
+        <small id="d-von"></small>
+      </div>
+
+      <button type="button" id="d-code-karte" class="karte-weiss code-karte">
+        <span id="d-strichcode" class="strichcode"></span>
+        <span id="d-code" class="code-text"></span>
+        <small id="d-code-tipp">Antippen: gross zeigen für die Kasse</small>
+      </button>
+      <div class="d-zeile">
+        <button type="button" id="d-kopieren" class="knopf zweit klein">Nummer kopieren</button>
+        <button type="button" id="d-pin" class="knopf zweit klein">PIN zeigen</button>
+        <a id="d-link" class="knopf zweit klein" target="_blank" rel="noopener noreferrer">Link öffnen</a>
+      </div>
+
+      <div class="knopf-reihe">
+        <button type="button" id="d-einloesen" class="knopf">Betrag eingelöst</button>
+        <button type="button" id="d-archiv" class="knopf zweit">Ins Archiv</button>
+      </div>
+
+      <div id="d-fotos" class="fotos"></div>
+      <p id="d-notiz" class="d-notiz"></p>
+
+      <h3>Verlauf</h3>
+      <ul id="d-verlauf" class="verlauf"></ul>
+
+      <div class="knopf-reihe">
+        <button type="button" id="d-bearbeiten" class="knopf zweit">Bearbeiten</button>
+        <button type="button" id="d-loeschen" class="knopf gefahr">Löschen</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Knöpfe unten auf der Liste -->
+  <div id="aktionen" class="aktionen">
+    <div class="aktionen-innen">
+      <button type="button" id="neu-scannen" class="knopf gross">Gutschein scannen</button>
+      <button type="button" id="neu-hand" class="knopf zweit">Ohne Scannen</button>
+    </div>
+  </div>
+
+  <!-- ============================================================ Kamera -->
+  <div id="scanner" class="scanner" hidden>
+    <video id="video" playsinline muted autoplay></video>
+    <div id="scan-rahmen" class="scan-rahmen"><i></i></div>
+    <div class="scan-oben">
+      <button type="button" id="scan-zu" class="scan-knopf">Abbrechen</button>
+    </div>
+    <p id="scan-hinweis" class="scan-hinweis">Strichcode oder QR-Code ins Feld halten.<br>Etwa eine Handbreit Abstand.</p>
+    <div id="scan-fehler" class="scan-fehler" hidden><p id="scan-fehler-text"></p></div>
+    <div class="scan-unten">
+      <button type="button" id="scan-licht" class="scan-knopf" hidden>Licht</button>
+      <button type="button" id="scan-zoom" class="scan-knopf" hidden>Zoom 2×</button>
+      <label class="scan-knopf datei">Foto wählen<input type="file" accept="image/*" id="scan-foto"></label>
+      <button type="button" id="scan-hand" class="scan-knopf">Eintippen</button>
+    </div>
+  </div>
+
+  <!-- ============================================================ An der Kasse -->
+  <div id="kasse" class="kasse" hidden>
+    <p id="k-laden" class="kasse-laden"></p>
+    <div id="k-strichcode" class="kasse-code"></div>
+    <p id="k-code" class="kasse-nummer"></p>
+    <p id="k-pin" class="kasse-pin" hidden></p>
+    <p id="k-rest" class="kasse-rest"></p>
+    <p class="kasse-tipp">Bildschirm ganz hell stellen.</p>
+    <button type="button" id="k-zu" class="knopf">Fertig</button>
+  </div>
+
+  <!-- ============================================================ Fenster -->
+  <dialog id="dlg-einloesen" class="dlg">
+    <form method="dialog" id="e-form">
+      <h3>Wie viel hast du eingelöst?</h3>
+      <p id="e-info" class="dlg-info"></p>
+      <label class="feld"><span>Betrag (CHF)</span><input id="e-betrag" inputmode="decimal" enterkeyhint="done"></label>
+      <button type="button" id="e-alles" class="knopf zweit klein">Alles</button>
+      <p id="e-fehler" class="fehler" hidden></p>
+      <div class="knopf-reihe">
+        <button type="button" id="e-abbrechen" class="knopf zweit">Abbrechen</button>
+        <button type="submit" id="e-ok" class="knopf">Eintragen</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-frage" class="dlg">
+    <form method="dialog">
+      <h3 id="q-titel"></h3>
+      <p id="q-text" class="dlg-info"></p>
+      <div class="knopf-reihe">
+        <button type="submit" value="nein" id="q-nein" class="knopf zweit">Abbrechen</button>
+        <button type="submit" value="ja" id="q-ja" class="knopf">OK</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="foto-gross" class="foto-gross" hidden><img id="foto-gross-bild" alt="Foto vom Gutschein"></div>
+  <div id="meldung" class="meldung" role="status" aria-live="polite"></div>
+
+  <datalist id="laeden">
+    <option value="Migros"><option value="Coop"><option value="Manor"><option value="Globus"><option value="Jelmoli">
+    <option value="Denner"><option value="Lidl"><option value="Aldi"><option value="Volg"><option value="Spar">
+    <option value="IKEA"><option value="Jumbo"><option value="Hornbach"><option value="Do it + Garden"><option value="OBI">
+    <option value="Digitec Galaxus"><option value="Interdiscount"><option value="MediaMarkt"><option value="Fust">
+    <option value="Ochsner Sport"><option value="SportX"><option value="Decathlon"><option value="H&amp;M"><option value="Zalando">
+    <option value="Orell Füssli"><option value="Ex Libris"><option value="Thalia"><option value="Franz Carl Weber"><option value="Müller">
+    <option value="SBB"><option value="Pathé"><option value="Kitag"><option value="Reka"><option value="Bon-Kultur">
+    <option value="Smartbox"><option value="Jochen Schweizer"><option value="Zoo Zürich"><option value="Restaurant">
+  </datalist>
+
+  <noscript><p style="padding:24px;font-family:sans-serif">Diese App braucht JavaScript.</p></noscript>
+  <script src="daten.js?v=2026-10-28-a51dc28" defer></script>
+  <script src="scanner.js?v=2026-10-28-a51dc28" defer></script>
+  <script src="strichcode.js?v=2026-10-28-a51dc28" defer></script>
+  <script src="app.js?v=2026-10-28-a51dc28" defer></script>
+</body>
+</html>
