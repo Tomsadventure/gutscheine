@@ -1,11 +1,13 @@
-/* Liest einen Gutschein auf einem Foto mit KI (Gemini über Firebase AI Logic): Laden, Guthaben oder Rabatt, Code, Ablauf, …
-   Braucht Internet und das Firebase-Projekt (firebase-config.js). Firebase lädt erst beim ersten Foto.
+/* Liest einen Gutschein auf einem Foto mit KI (Gemini über Firebase AI Logic, Agent Platform): Laden, Guthaben oder Rabatt, Code, Ablauf, …
+   Braucht Internet und das Firebase-Projekt (firebase-config.js). Firebase lädt erst, wenn die Kamera aufgeht.
    Das Foto geht dafür an Google (bezahlte Stufe: Google trainiert nicht damit). */
 window.KI = (function () {
   'use strict';
   const E = window.FIREBASE || {};
-  const ZEIT_MS = 40000;
-  let modell = null;
+  const LADEN_MS = 20000;      // Firebase und App Check laden
+  const VERSUCH_MS = 15000;    // eine Anfrage an Gemini
+  const VERSUCHE = 2;
+  let modell = null;           // Promise des eingerichteten Modells
 
   const PROMPT = 'Auf dem Foto ist ein Gutschein aus der Schweiz (Geschenkkarte, Wertgutschein, Rabatt-Code oder Ähnliches). ' +
     'Lies die Angaben heraus. Erfinde nichts: Was nicht auf dem Foto steht oder nicht lesbar ist, bleibt leer.';
@@ -41,17 +43,21 @@ window.KI = (function () {
     });
   }
 
-  async function holeModell() {
-    if (modell) return modell;
-    await ladeFirebase();
-    const F = window.Firebase;
-    const app = F.initializeApp(E.config);
-    if (E.appCheck) F.initializeAppCheck(app, { provider: new F.ReCaptchaEnterpriseProvider(E.appCheck), isTokenAutoRefreshEnabled: true });
-    const ai = F.getAI(app, { backend: new F.GoogleAIBackend() });
-    modell = F.getGenerativeModel(ai, {
-      model: E.modell,
-      generationConfig: { responseMimeType: 'application/json', responseJsonSchema: SCHEMA, thinkingConfig: { thinkingLevel: 'LOW' } },
-    });
+  // Einmal einrichten (auch wenn vorbereiten() und lesen() gleichzeitig fragen); lädt Firebase nicht, z. B. offline → nochmals versuchen
+  function holeModell() {
+    if (!modell) {
+      modell = ladeFirebase().then(() => {
+        const F = window.Firebase;
+        const app = F.initializeApp(E.config);
+        if (E.appCheck) F.initializeAppCheck(app, { provider: new F.ReCaptchaEnterpriseProvider(E.appCheck), isTokenAutoRefreshEnabled: true });
+        // Agent Platform (früher Vertex AI) an einem festen Ort; ohne Ort die Gemini Developer API (braucht dort Prepay-Guthaben)
+        const ai = F.getAI(app, { backend: E.ort ? new F.AgentPlatformBackend(E.ort) : new F.GoogleAIBackend() });
+        return F.getGenerativeModel(ai, {
+          model: E.modell,
+          generationConfig: { responseMimeType: 'application/json', responseJsonSchema: SCHEMA, thinkingConfig: { thinkingLevel: E.denken || 'LOW' } },
+        });
+      }, e => { modell = null; throw e; });
+    }
     return modell;
   }
 
@@ -87,13 +93,24 @@ window.KI = (function () {
     };
   }
 
-  // Foto (Blob, JPEG) → Angaben; wirft bei Fehlern
+  // Foto (Blob, JPEG) → Angaben; wirft bei Fehlern. Gemini antwortet meist in 3–9 s, bleibt aber ab und zu hängen
+  // (2026-10-28 gemessen: etwa jede dritte Anfrage > 40 s) → nach VERSUCH_MS abbrechen und einmal neu fragen.
   async function lesen(blob) {
-    const m = await holeModell();
-    const daten = await base64(blob);
-    const r = await mitZeit(m.generateContent([{ text: PROMPT }, { inlineData: { mimeType: blob.type || 'image/jpeg', data: daten } }]), ZEIT_MS);
-    return aufraeumen(JSON.parse(r.response.text()));
+    const m = await mitZeit(holeModell(), LADEN_MS);
+    const teile = [{ text: PROMPT }, { inlineData: { mimeType: blob.type || 'image/jpeg', data: await base64(blob) } }];
+    let fehler = null;
+    for (let i = 0; i < VERSUCHE; i++) {
+      let r;
+      try { r = await m.generateContent(teile, { timeout: VERSUCH_MS }); } catch (e) { fehler = e; continue; }
+      return aufraeumen(JSON.parse(r.response.text()));
+    }
+    throw fehler;
   }
 
-  return { bereit, lesen };
+  // Beim Öffnen der Kamera: Firebase und App Check (reCAPTCHA) schon laden – bis zum Foto ist der Schutz bereit
+  function vorbereiten() {
+    if (bereit()) holeModell().catch(() => {});
+  }
+
+  return { bereit, lesen, vorbereiten };
 })();

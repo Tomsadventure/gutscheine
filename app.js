@@ -193,6 +193,7 @@
     $('scan-licht').hidden = $('scan-zoom').hidden = $('scan-knipsen').hidden = true;
     $('scan-rahmen').classList.remove('treffer');
     lichtAn = zoomAn = false;
+    K.vorbereiten();
     S.starte($('video'), $('scan-rahmen'), {
       gefunden: t => {
         $('scan-rahmen').classList.add('treffer');
