@@ -189,13 +189,30 @@ body[data-view="formular"] .seite { padding-bottom: 0; }
   background: #fff; color: var(--ink); border-radius: var(--r); padding: 16px; }
 .scan-fehler p { margin: 0; }
 .scan-unten { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px var(--gut-r) calc(16px + env(safe-area-inset-bottom)) var(--gut-l);
-  display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.scan-zeile { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 .scan-knopf { display: inline-flex; align-items: center; justify-content: center; min-height: 46px; padding: 10px 16px;
   border-radius: 999px; border: 0; background: rgba(255, 255, 255, .18); color: #fff; font-weight: 800;
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 .scan-knopf.an { background: #fff; color: var(--ink); }
-.scan-knopf.hell { background: #fff; color: var(--ink); flex: 1 1 100%; max-width: 340px; min-height: 52px; font-size: 18px; }
 .scanner.liest .scan-unten { opacity: .4; pointer-events: none; }
+/* «Strichcode / QR» oder «Foto» – wie bei der Kamera des Handys */
+.scan-art { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; width: min(100%, 340px); border-radius: 999px;
+  background: rgba(0, 0, 0, .45); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.scan-art button { min-height: 42px; padding: 8px 6px; border: 0; border-radius: 999px; background: none; color: #fff; font-weight: 800;
+  font-size: clamp(14px, 4.4vw, 16px); white-space: nowrap; }
+.scan-art button[aria-selected="true"] { background: #fff; color: var(--ink); }
+.scan-ausloeser { width: 72px; height: 72px; flex: none; padding: 0; border: 0; border-radius: 50%; background: #fff;
+  box-shadow: 0 0 0 4px rgba(0, 0, 0, .55), 0 0 0 8px #fff; margin: 4px 0; }
+.scan-ausloeser:active { transform: scale(.92); }
+.scan-ausloeser:disabled { opacity: .5; }
+.scanner:not(.art-foto) .scan-ausloeser, .scanner.mit-fehler .scan-ausloeser, .scanner.mit-fehler .scan-art { display: none; }
+/* Foto: kein Rahmen, der Hinweis steht oben; beim Lesen ist das Foto zu sehen */
+.scanner.art-foto .scan-rahmen, .scanner.liest .scan-rahmen { display: none; }
+.scanner.art-foto .scan-hinweis, .scanner.liest .scan-hinweis { top: calc(70px + env(safe-area-inset-top)); left: 50%; right: auto;
+  transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); padding: 8px 14px; border-radius: 14px;
+  background: rgba(0, 0, 0, .55); }
+.scan-bild { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
 
 /* ---------- An der Kasse ---------- */
 .kasse { position: fixed; inset: 0; z-index: 20; background: #fff; color: #000; overflow-y: auto;

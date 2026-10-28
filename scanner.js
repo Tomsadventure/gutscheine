@@ -11,6 +11,7 @@ window.Scanner = (function () {
   let worker = null, nr = 0;
   const wartet = new Map();
   let strom = null, spur = null, video = null, rahmen = null, cb = null, laeuft = false;
+  let sucht = true;          // false = die Kamera läuft, sucht aber keine Strichcodes (Art «Foto»)
   const leinwand = document.createElement('canvas');
   const ctx = leinwand.getContext('2d', { willReadFrequently: true });
 
@@ -75,11 +76,12 @@ window.Scanner = (function () {
 
   const licht = an => spur ? spur.applyConstraints({ advanced: [{ torch: an }] }) : Promise.resolve();
   const zoom = stufe => spur ? spur.applyConstraints({ advanced: [{ zoom: stufe }] }) : Promise.resolve();
+  const suchen = an => { sucht = an; };
 
   async function schleife() {
     let runde = 0, letzter = '';
     while (laeuft) {
-      if (video.readyState >= 2 && video.videoWidth) {
+      if (sucht && video.readyState >= 2 && video.videoWidth) {
         let treffer = [];
         try {
           treffer = await lies(kamerabild(runde++ % 2 === 1), false);
@@ -151,7 +153,7 @@ window.Scanner = (function () {
     return treffer[0] || null;
   }
 
-  // «Foto machen»: das aktuelle Kamerabild in voller Grösse (JPEG), für Gutscheine ohne Strichcode.
+  // Runder Auslöser (Art «Foto»): das aktuelle Kamerabild in voller Grösse (JPEG).
   function standbild() {
     if (!video || !video.videoWidth) return Promise.reject(new Error('Die Kamera zeigt noch nichts.'));
     const c = document.createElement('canvas');
@@ -167,5 +169,5 @@ window.Scanner = (function () {
     return new Promise(ok => c.toBlob(b => ok(b || blob), 'image/jpeg', 0.82));
   }
 
-  return { starte, stop, licht, zoom, fotoLesen, standbild, verkleinern };
+  return { starte, stop, licht, zoom, suchen, fotoLesen, standbild, verkleinern };
 })();

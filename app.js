@@ -7,7 +7,9 @@
   const BALD_TAGE = 30;        // so viele Tage vor dem Ablauf gilt ein Gutschein als «läuft bald ab»
   const FOTO_MAX = 1600;       // Fotos werden höchstens so breit gespeichert
   const FARBEN = ['#0E7C66', '#2563A8', '#B4542D', '#7A4FB3', '#A8326E', '#3E7D2B', '#94650A', '#2F6F7A'];
-  const SCAN_HINWEIS = 'Strichcode oder QR-Code ins Feld halten.<br>Kein Strichcode drauf? «Foto machen».';
+  const CODE_HINWEIS = 'Strichcode oder QR-Code ins Feld halten.<br>Er wird von selbst gelesen.';
+  const fotoHinweis = () => 'Den ganzen Gutschein ins Bild nehmen.<br>' +
+    (K.bereit() ? 'Die KI füllt dann alles aus.' : 'Ohne Internet sucht die App nur den Strichcode.');
 
   const chfFormat = new Intl.NumberFormat('de-CH', { style: 'currency', currency: 'CHF' });
   const chf = n => chfFormat.format(n || 0);
@@ -182,17 +184,33 @@
 
   // ---------- Kamera ----------
   let zoomStufen = null, zoomAn = false, lichtAn = false;
+  let scanArt = '';            // 'code' = Strichcode / QR im Rahmen, liest von selbst · 'foto' = ganzes Bild, runder Auslöser
+
+  function zeigeScanArt(art) {
+    scanArt = art;
+    const foto = art === 'foto';
+    $('scanner').classList.toggle('art-foto', foto);
+    for (const b of $('scan-art').querySelectorAll('button')) b.setAttribute('aria-selected', b.dataset.art === art);
+    $('scan-hinweis').innerHTML = foto ? fotoHinweis() : CODE_HINWEIS;
+    if (foto && zoomAn) zoomUm();
+    $('scan-zoom').hidden = foto || !zoomStufen;
+    S.suchen(!foto);
+  }
 
   function oeffneScanner() {
     $('scanner').hidden = false;
     $('scan-fehler').hidden = true;
     $('scanner').classList.remove('mit-fehler');
     $('scanner').classList.remove('liest');
+    zeigeBild(null);
     $('scan-hinweis').hidden = false;
-    $('scan-hinweis').innerHTML = SCAN_HINWEIS;
-    $('scan-licht').hidden = $('scan-zoom').hidden = $('scan-knipsen').hidden = true;
+    $('scan-licht').hidden = $('scan-zoom').hidden = true;
+    $('scan-knipsen').disabled = true;
     $('scan-rahmen').classList.remove('treffer');
     lichtAn = zoomAn = false;
+    zoomStufen = null;
+    // Zuletzt gewählte Art; beim ersten Mal «Foto» (liest alles), ohne Internet «Strichcode / QR»
+    zeigeScanArt(scanArt || lies('scanart') || (K.bereit() ? 'foto' : 'code'));
     K.vorbereiten();
     S.starte($('video'), $('scan-rahmen'), {
       gefunden: t => {
@@ -208,15 +226,24 @@
       faehig: f => {
         $('scan-licht').hidden = !f.licht;
         zoomStufen = f.zoom ? [f.zoom.min || 1, Math.min(2, f.zoom.max)] : null;
-        $('scan-zoom').hidden = !zoomStufen;
+        $('scan-zoom').hidden = !zoomStufen || scanArt === 'foto';
       },
-    }).then(() => { if (ansichtJetzt === 'scan' && $('scan-fehler').hidden) $('scan-knipsen').hidden = false; })
+    }).then(() => { $('scan-knipsen').disabled = false; })
       .catch(e => scanFehler(kameraFehler(e)));
   }
 
   function schliesseScanner() {
     S.stop();
     $('scanner').hidden = true;
+    zeigeBild(null);
+  }
+
+  // Beim Lesen das Foto statt der Kamera zeigen
+  function zeigeBild(blob) {
+    const img = $('scan-bild');
+    if (img.src) URL.revokeObjectURL(img.src);
+    if (blob) img.src = URL.createObjectURL(blob); else img.removeAttribute('src');
+    img.hidden = !blob;
   }
 
   function kameraFehler(e) {
@@ -236,21 +263,24 @@
     $('scan-fehler').hidden = false;
     $('scanner').classList.add('mit-fehler');
     $('scan-hinweis').hidden = true;
-    $('scan-knipsen').hidden = true;
   }
 
   $('scan-zu').addEventListener('click', zurueck);
+  for (const b of $('scan-art').querySelectorAll('button')) {
+    b.addEventListener('click', () => { merke('scanart', b.dataset.art); zeigeScanArt(b.dataset.art); });
+  }
   $('scan-hand').addEventListener('click', () => { entwurf = neuerEntwurf({}); zeige('formular', {}, true); });
   $('scan-licht').addEventListener('click', () => {
     lichtAn = !lichtAn;
     S.licht(lichtAn).catch(() => { lichtAn = false; });
     $('scan-licht').classList.toggle('an', lichtAn);
   });
-  $('scan-zoom').addEventListener('click', () => {
+  function zoomUm() {
     zoomAn = !zoomAn;
     S.zoom(zoomStufen[zoomAn ? 1 : 0]).catch(() => {});
     $('scan-zoom').classList.toggle('an', zoomAn);
-  });
+  }
+  $('scan-zoom').addEventListener('click', zoomUm);
   $('scan-foto').addEventListener('change', e => {
     const datei = e.target.files[0];
     e.target.value = '';
@@ -262,11 +292,11 @@
     fotoVerarbeiten(bild);
   });
 
-  // Foto (gewählt oder «Foto machen»): Strichcode suchen und – falls eingerichtet – die KI lesen lassen, dann ins Formular
+  // Foto (gewählt oder runder Auslöser): Strichcode suchen und – falls eingerichtet – die KI lesen lassen, dann ins Formular
   async function fotoVerarbeiten(datei) {
     S.stop();
     $('scanner').classList.add('liest');
-    $('scan-knipsen').hidden = true;
+    zeigeBild(datei);
     $('scan-hinweis').hidden = false;
     $('scan-hinweis').textContent = 'Foto wird gelesen …';
     const klein = await S.verkleinern(datei, FOTO_MAX).catch(() => null);
@@ -277,8 +307,6 @@
       try { return await K.lesen(klein || datei); } catch (e) { kiFehler = (e && e.message) || String(e); return null; }
     };
     const [t, k] = await Promise.all([S.fotoLesen(datei).catch(() => null), kiLesen()]);
-    $('scanner').classList.remove('liest');
-    $('scan-hinweis').innerHTML = SCAN_HINWEIS;
     if (ansichtJetzt !== 'scan') return;
     entwurf = neuerEntwurf(t ? { code: t.text, gelesen: t.format } : {});
     if (k) kiUebernehmen(entwurf, k);
