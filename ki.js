@@ -1,10 +1,9 @@
 /* Liest einen Gutschein auf einem Foto mit KI (Gemini über Firebase AI Logic, Agent Platform): Laden, Guthaben oder Rabatt, Code, Ablauf, …
-   Braucht Internet und das Firebase-Projekt (firebase-config.js). Firebase lädt erst, wenn die Kamera aufgeht.
+   Braucht Internet und das Firebase-Projekt (firebase-config.js, eingerichtet von wolke.js).
    Das Foto geht dafür an Google (bezahlte Stufe: Google trainiert nicht damit). */
 window.KI = (function () {
   'use strict';
-  const E = window.FIREBASE || {};
-  const LADEN_MS = 20000;      // Firebase und App Check laden
+  const W = window.Wolke, E = W.E || {};
   const VERSUCH_MS = 15000;    // eine Anfrage an Gemini
   const VERSUCHE = 2;
   let modell = null;           // Promise des eingerichteten Modells
@@ -30,33 +29,18 @@ window.KI = (function () {
   };
 
   // Ist die KI eingerichtet und das Handy online?
-  const bereit = () => !!E.config && navigator.onLine !== false;
+  const bereit = () => !!W.app && !!E.modell && navigator.onLine !== false;
 
-  function ladeFirebase() {
-    if (window.Firebase) return Promise.resolve();
-    return new Promise((ok, nein) => {
-      const s = document.createElement('script');
-      s.src = 'lib/firebase/firebase.js?v=' + window.BUILD;
-      s.onload = ok;
-      s.onerror = () => nein(new Error('Firebase lädt nicht'));
-      document.head.appendChild(s);
-    });
-  }
-
-  // Einmal einrichten (auch wenn vorbereiten() und lesen() gleichzeitig fragen); lädt Firebase nicht, z. B. offline → nochmals versuchen
+  // Einmal einrichten (auch wenn vorbereiten() und lesen() gleichzeitig fragen)
   function holeModell() {
     if (!modell) {
-      modell = ladeFirebase().then(() => {
-        const F = window.Firebase;
-        const app = F.initializeApp(E.config);
-        if (E.appCheck) F.initializeAppCheck(app, { provider: new F.ReCaptchaEnterpriseProvider(E.appCheck), isTokenAutoRefreshEnabled: true });
-        // Agent Platform (früher Vertex AI) an einem festen Ort; ohne Ort die Gemini Developer API (braucht dort Prepay-Guthaben)
-        const ai = F.getAI(app, { backend: E.ort ? new F.AgentPlatformBackend(E.ort) : new F.GoogleAIBackend() });
-        return F.getGenerativeModel(ai, {
-          model: E.modell,
-          generationConfig: { responseMimeType: 'application/json', responseJsonSchema: SCHEMA, thinkingConfig: { thinkingLevel: E.denken || 'LOW' } },
-        });
-      }, e => { modell = null; throw e; });
+      const F = W.F;
+      // Agent Platform (früher Vertex AI) an einem festen Ort; ohne Ort die Gemini Developer API (braucht dort Prepay-Guthaben)
+      const ai = F.getAI(W.app, { backend: E.ort ? new F.AgentPlatformBackend(E.ort) : new F.GoogleAIBackend() });
+      modell = Promise.resolve(F.getGenerativeModel(ai, {
+        model: E.modell,
+        generationConfig: { responseMimeType: 'application/json', responseJsonSchema: SCHEMA, thinkingConfig: { thinkingLevel: E.denken || 'LOW' } },
+      }));
     }
     return modell;
   }
@@ -67,12 +51,6 @@ window.KI = (function () {
     r.onerror = () => nein(r.error);
     r.readAsDataURL(blob);
   });
-
-  function mitZeit(promise, ms) {
-    let t = 0;
-    return Promise.race([promise, new Promise((_, nein) => { t = setTimeout(() => nein(new Error('Zeit abgelaufen')), ms); })])
-      .finally(() => clearTimeout(t));
-  }
 
   // Antwort prüfen: nur erwartete Felder, sauber geschrieben
   function aufraeumen(k) {
@@ -96,7 +74,7 @@ window.KI = (function () {
   // Foto (Blob, JPEG) → Angaben; wirft bei Fehlern. Gemini antwortet meist in 3–9 s, bleibt aber ab und zu hängen
   // (2026-10-28 gemessen: etwa jede dritte Anfrage > 40 s) → nach VERSUCH_MS abbrechen und einmal neu fragen.
   async function lesen(blob) {
-    const m = await mitZeit(holeModell(), LADEN_MS);
+    const m = await holeModell();
     const teile = [{ text: PROMPT }, { inlineData: { mimeType: blob.type || 'image/jpeg', data: await base64(blob) } }];
     let fehler = null;
     for (let i = 0; i < VERSUCHE; i++) {
@@ -107,7 +85,7 @@ window.KI = (function () {
     throw fehler;
   }
 
-  // Beim Öffnen der Kamera: Firebase und App Check (reCAPTCHA) schon laden – bis zum Foto ist der Schutz bereit
+  // Beim Öffnen der Kamera: das Modell schon einrichten
   function vorbereiten() {
     if (bereit()) holeModell().catch(() => {});
   }

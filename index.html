@@ -16,8 +16,8 @@
   <link rel="icon" href="icons/favicon.png" type="image/png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="preload" href="fonts/Nunito-ExtraBold.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="style.css?v=2026-10-28-22e72d7">
-  <script>window.BUILD = '2026-10-28-22e72d7';</script>
+  <link rel="stylesheet" href="style.css?v=2026-10-28-0eb29d6">
+  <script>window.BUILD = '2026-10-28-0eb29d6';</script>
 </head>
 <body data-view="liste">
   <header class="kopf">
@@ -28,6 +28,45 @@
   </header>
 
   <main class="seite">
+    <!-- ============================================================ Anmelden -->
+    <section id="anmelden" class="ansicht" hidden>
+      <form id="a-form" class="anmelden" novalidate>
+        <div class="a-kopf">
+          <img src="icons/icon-192.png" alt="" class="a-symbol" width="56" height="56">
+          <h2 id="a-titel">Anmelden</h2>
+          <p id="a-text">Eure gemeinsame Gutschein-Liste. Einmal anmelden – danach bleibt dieses Handy angemeldet.</p>
+        </div>
+        <label class="feld"><span>E-Mail</span>
+          <input id="a-email" type="email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" enterkeyhint="next">
+        </label>
+        <label class="feld"><span id="a-pw-titel">Passwort</span>
+          <input id="a-passwort" type="password" autocomplete="current-password" enterkeyhint="go">
+        </label>
+        <div class="a-zeile">
+          <label class="feld-check"><input type="checkbox" id="a-zeigen"><span>Passwort zeigen</span></label>
+          <button type="button" id="a-vergessen" class="link-knopf">Passwort vergessen?</button>
+        </div>
+        <p id="a-fehler" class="fehler" role="alert" hidden></p>
+        <p id="a-info" class="a-info" role="status" hidden></p>
+        <button type="submit" id="a-los" class="knopf gross">Anmelden</button>
+        <button type="button" id="a-wechsel" class="knopf zweit">Neues Konto erstellen</button>
+      </form>
+    </section>
+
+    <!-- ============================================================ Konto noch nicht freigeschaltet -->
+    <section id="gesperrt" class="ansicht" hidden>
+      <div class="anmelden">
+        <div class="a-kopf">
+          <img src="icons/icon-192.png" alt="" class="a-symbol" width="56" height="56">
+          <h2>Fast geschafft</h2>
+          <p>Dein Konto <b id="g-email"></b> ist erstellt. Es muss noch für eure gemeinsame Liste freigeschaltet werden.</p>
+          <p>Danach erscheinen eure Gutscheine hier von selbst.</p>
+        </div>
+        <button type="button" id="g-nochmals" class="knopf gross">Nochmals prüfen</button>
+        <button type="button" id="g-abmelden" class="knopf zweit">Abmelden</button>
+      </div>
+    </section>
+
     <!-- ============================================================ Liste -->
     <section id="liste" class="ansicht">
       <div id="tipp" class="tipp" hidden>
@@ -55,7 +94,7 @@
         <svg viewBox="0 0 120 80" aria-hidden="true"><rect x="8" y="12" width="104" height="56" rx="10" fill="#fff" stroke="#B9C8C2" stroke-width="3"/><circle cx="8" cy="40" r="9" fill="#F3F5F4" stroke="#B9C8C2" stroke-width="3"/><circle cx="112" cy="40" r="9" fill="#F3F5F4" stroke="#B9C8C2" stroke-width="3"/><path d="M44 26v28M50 26v28M54 26v28M62 26v28M66 26v28M74 26v28M78 26v28" stroke="#5E716A" stroke-width="3"/></svg>
         <p id="leer-text">Noch keine Gutscheine.<br>Tippe auf «Gutschein scannen».</p>
       </div>
-      <p class="fuss" id="fuss"></p>
+      <p class="fuss"><span id="fuss"></span> <button type="button" id="abmelden" class="link-knopf">Abmelden</button></p>
     </section>
 
     <!-- ============================================================ Erfassen / Bearbeiten -->
@@ -246,11 +285,13 @@
   </datalist>
 
   <noscript><p style="padding:24px;font-family:sans-serif">Diese App braucht JavaScript.</p></noscript>
-  <script src="firebase-config.js?v=2026-10-28-22e72d7" defer></script>
-  <script src="daten.js?v=2026-10-28-22e72d7" defer></script>
-  <script src="ki.js?v=2026-10-28-22e72d7" defer></script>
-  <script src="scanner.js?v=2026-10-28-22e72d7" defer></script>
-  <script src="strichcode.js?v=2026-10-28-22e72d7" defer></script>
-  <script src="app.js?v=2026-10-28-22e72d7" defer></script>
+  <script src="firebase-config.js?v=2026-10-28-0eb29d6" defer></script>
+  <script src="lib/firebase/firebase.js?v=2026-10-28-0eb29d6" defer></script>
+  <script src="wolke.js?v=2026-10-28-0eb29d6" defer></script>
+  <script src="daten.js?v=2026-10-28-0eb29d6" defer></script>
+  <script src="ki.js?v=2026-10-28-0eb29d6" defer></script>
+  <script src="scanner.js?v=2026-10-28-0eb29d6" defer></script>
+  <script src="strichcode.js?v=2026-10-28-0eb29d6" defer></script>
+  <script src="app.js?v=2026-10-28-0eb29d6" defer></script>
 </body>
 </html>

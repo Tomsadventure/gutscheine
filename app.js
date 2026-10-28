@@ -1,5 +1,6 @@
-/* Gutscheine: Liste, Erfassen (Kamera, Foto oder von Hand), einen Gutschein ansehen, an der Kasse zeigen.
-   Speichern: daten.js · Kamera und Lesen: scanner.js · Foto mit KI lesen: ki.js · Strichcode zeichnen: strichcode.js */
+/* Gutscheine: Anmelden, Liste, Erfassen (Kamera, Foto oder von Hand), einen Gutschein ansehen, an der Kasse zeigen.
+   Gemeinsame Liste und Konto: daten.js (Firebase: wolke.js) · Kamera und Lesen: scanner.js · Foto mit KI lesen: ki.js ·
+   Strichcode zeichnen: strichcode.js */
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -15,8 +16,10 @@
   const chf = n => chfFormat.format(n || 0);
 
   let alle = [];               // alle Gutscheine
+  let zugang = 'unbekannt';    // abgemeldet | gesperrt (Konto noch nicht freigeschaltet) | ok
   let reiter = 'aktiv';
   let ansichtJetzt = 'liste';
+  let detailStand = '';        // so steht der gezeigte Gutschein (geaendert) – Änderungen vom anderen Handy neu zeigen
   let entwurf = null;          // was im Formular steht: { id, laden, …, gelesen, formatGewaehlt, fotos: [{ id } | { blob, url }] }
   let sperre = null;           // Bildschirm wach halten an der Kasse
   let installEvent = null;
@@ -86,7 +89,8 @@
   async function fotoUrl(id) {
     if (!fotoUrls.has(id)) {
       const blob = await D.foto(id);
-      fotoUrls.set(id, blob ? URL.createObjectURL(blob) : '');
+      if (!blob) return '';   // ohne Internet noch nicht da → später nochmals versuchen
+      fotoUrls.set(id, URL.createObjectURL(blob));
     }
     return fotoUrls.get(id);
   }
@@ -108,6 +112,10 @@
 
   function rendere(st) {
     const v = st.v || 'liste';
+    // Ohne freigeschaltetes Konto nur Anmelden bzw. «Fast geschafft» (auch mit der Zurück-Taste)
+    if (zugang === 'abgemeldet' && v !== 'anmelden') return zeige('anmelden', {}, true);
+    if (zugang === 'gesperrt' && v !== 'gesperrt') return zeige('gesperrt', {}, true);
+    if (zugang === 'ok' && (v === 'anmelden' || v === 'gesperrt')) return zeige('liste', {}, true);
     const g = st.id ? alle.find(x => x.id === st.id) : null;
     if ((v === 'detail' || v === 'kasse') && !g) return zeige('liste', {}, true);
     if (v === 'formular' && !entwurf) return zeige('liste', {}, true);
@@ -117,10 +125,10 @@
     $('foto-gross').hidden = true;
 
     const seite = v === 'scan' ? 'liste' : v === 'kasse' ? 'detail' : v;
-    for (const id of ['liste', 'formular', 'detail']) $(id).hidden = id !== seite;
+    for (const id of ['anmelden', 'gesperrt', 'liste', 'formular', 'detail']) $(id).hidden = id !== seite;
     document.body.dataset.view = v;
     $('aktionen').hidden = seite !== 'liste';
-    $('zurueck').hidden = seite === 'liste';
+    $('zurueck').hidden = ['liste', 'anmelden', 'gesperrt'].includes(seite);
     $('titel').textContent = seite === 'formular' ? (entwurf.id ? 'Bearbeiten' : 'Neuer Gutschein')
       : seite === 'detail' ? 'Gutschein' : 'Gutscheine';
     const neueSeite = seite !== (ansichtJetzt === 'scan' ? 'liste' : ansichtJetzt === 'kasse' ? 'detail' : ansichtJetzt);
@@ -179,7 +187,8 @@
     $('leer').hidden = liste.length > 0;
     $('leer-text').innerHTML = q ? 'Nichts gefunden.'
       : reiter === 'archiv' ? 'Das Archiv ist leer.<br>Hier landen aufgebrauchte Gutscheine.'
-        : 'Noch keine Gutscheine.<br>Tippe auf «Gutschein scannen».';
+        : !D.stand().vomServer && navigator.onLine !== false ? 'Die Gutscheine werden geladen …'
+          : 'Noch keine Gutscheine.<br>Tippe auf «Gutschein scannen».';
   }
 
   // ---------- Kamera ----------
@@ -509,6 +518,7 @@
 
   // ---------- Ein Gutschein ----------
   async function zeigeDetail(g) {
+    detailStand = g.geaendert;
     const l = lage(g);
     logo($('d-logo'), g.laden);
     $('d-laden').textContent = g.laden;
@@ -741,11 +751,160 @@
     });
   }
 
-  // ---------- Start ----------
-  $('fuss').textContent = `Prototyp: Die Gutscheine sind nur auf diesem Gerät gespeichert. · Version ${window.BUILD}`;
-  history.replaceState({ v: 'liste' }, '');
-  neuLaden().then(() => { zeigeListe(); zeigeTipp(); document.body.dataset.bereit = '1'; }).catch(e => {
-    $('leer-text').textContent = 'Die gespeicherten Gutscheine lassen sich nicht laden: ' + (e.message || e);
-    $('leer').hidden = false;
+  // ---------- Anmelden ----------
+  let neuesKonto = false;
+  const KONTO_FEHLER = {
+    'auth/invalid-email': 'Diese E-Mail-Adresse stimmt so nicht.',
+    'auth/invalid-credential': 'E-Mail oder Passwort stimmt nicht.',
+    'auth/wrong-password': 'E-Mail oder Passwort stimmt nicht.',
+    'auth/user-not-found': 'E-Mail oder Passwort stimmt nicht.',
+    'auth/email-already-in-use': 'Für diese E-Mail gibt es schon ein Konto – bitte anmelden.',
+    'auth/weak-password': 'Das Passwort braucht mindestens 8 Zeichen.',
+    'auth/missing-password': 'Bitte das Passwort eintragen.',
+    'auth/network-request-failed': 'Keine Verbindung. Zum Anmelden braucht es Internet.',
+    'auth/too-many-requests': 'Zu viele Versuche. Bitte in ein paar Minuten nochmals.',
+    'auth/user-disabled': 'Dieses Konto ist gesperrt.',
+  };
+  const kontoFehler = e => KONTO_FEHLER[e && e.code] || 'Das ging nicht (' + ((e && (e.code || e.message)) || e) + ').';
+
+  function anmeldeArt(neu) {
+    neuesKonto = neu;
+    $('a-titel').textContent = neu ? 'Neues Konto' : 'Anmelden';
+    $('a-text').textContent = neu ? 'Jede Person bekommt ein eigenes Konto – beide sehen dieselbe Liste.'
+      : 'Eure gemeinsame Gutschein-Liste. Einmal anmelden – danach bleibt dieses Handy angemeldet.';
+    $('a-pw-titel').textContent = neu ? 'Passwort (mindestens 8 Zeichen)' : 'Passwort';
+    $('a-passwort').autocomplete = neu ? 'new-password' : 'current-password';
+    $('a-los').textContent = neu ? 'Konto erstellen' : 'Anmelden';
+    $('a-wechsel').textContent = neu ? 'Ich habe schon ein Konto' : 'Neues Konto erstellen';
+    $('a-vergessen').hidden = neu;
+    $('a-fehler').hidden = $('a-info').hidden = true;
+  }
+  function anmeldeFehler(text) {
+    $('a-fehler').textContent = text;
+    $('a-fehler').hidden = false;
+    $('a-info').hidden = true;
+  }
+  $('a-wechsel').addEventListener('click', () => anmeldeArt(!neuesKonto));
+  $('a-zeigen').addEventListener('change', () => { $('a-passwort').type = $('a-zeigen').checked ? 'text' : 'password'; });
+  $('a-form').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const email = $('a-email').value.trim(), passwort = $('a-passwort').value;
+    if (!email) return anmeldeFehler('Bitte die E-Mail-Adresse eintragen.');
+    if (!passwort) return anmeldeFehler('Bitte das Passwort eintragen.');
+    if (neuesKonto && passwort.length < 8) return anmeldeFehler('Das Passwort braucht mindestens 8 Zeichen.');
+    $('a-los').disabled = true;
+    $('a-fehler').hidden = $('a-info').hidden = true;
+    try {
+      await (neuesKonto ? D.registrieren(email, passwort) : D.anmelden(email, passwort));
+      $('a-passwort').value = '';   // weiter geht es in D.konto (unten)
+    } catch (e) {
+      anmeldeFehler(kontoFehler(e));
+    } finally {
+      $('a-los').disabled = false;
+    }
   });
+  $('a-vergessen').addEventListener('click', async () => {
+    const email = $('a-email').value.trim();
+    if (!email) return anmeldeFehler('Zuerst oben die E-Mail-Adresse eintragen.');
+    try {
+      await D.passwortVergessen(email);
+      $('a-info').textContent = `Falls es für ${email} ein Konto gibt, kommt gleich eine E-Mail zum Zurücksetzen (auch im Spam nachsehen).`;
+      $('a-info').hidden = false;
+      $('a-fehler').hidden = true;
+    } catch (e) {
+      anmeldeFehler(kontoFehler(e));
+    }
+  });
+
+  // Konto noch nicht freigeschaltet: alle 20 s und auf Knopfdruck nochmals fragen
+  let nochmalsTimer = 0;
+  function nochmals() {
+    clearTimeout(nochmalsTimer);
+    if (zugang === 'gesperrt') D.starte(datenNeu);
+  }
+  $('g-nochmals').addEventListener('click', nochmals);
+
+  async function abmelden() {
+    if (D.stand().ausstehend) {
+      if (!await frage('Noch nicht alles übertragen', 'Einige Änderungen warten noch auf Internet. Beim Abmelden gehen sie verloren.',
+        'Trotzdem abmelden', true)) return;
+    } else if (zugang === 'ok' && !await frage('Abmelden?', 'Die Gutscheine bleiben in eurer Liste. Zum Anmelden braucht es wieder ' +
+      'E-Mail, Passwort und Internet.', 'Abmelden')) return;
+    clearTimeout(nochmalsTimer);
+    await D.abmelden();   // → D.konto meldet «niemand» → Anmelden
+  }
+  $('abmelden').addEventListener('click', abmelden);
+  $('g-abmelden').addEventListener('click', abmelden);
+
+  // ---------- Gemeinsame Liste: Änderungen (auch vom anderen Handy) ----------
+  let uebernommen = false;     // alte Gutscheine des Prototyps schon hochgeladen (pro Anmeldung einmal versuchen)
+  function fussText() {
+    $('fuss').textContent = `Angemeldet als ${D.email()}` + (D.stand().ausstehend ? ' · wartet auf Internet' : '') +
+      ` · Version ${window.BUILD}`;
+  }
+  async function datenNeu(art, info) {
+    if (art === 'gesperrt') {
+      zugang = 'gesperrt';
+      $('g-email').textContent = D.email();
+      zeige('gesperrt', {}, true);
+      clearTimeout(nochmalsTimer);
+      nochmalsTimer = setTimeout(nochmals, 20000);
+      return fertig();
+    }
+    if (art === 'fehler') {
+      console.warn('Gemeinsame Liste:', info);
+      return melde('Die gemeinsame Liste meldet einen Fehler: ' + ((info && (info.code || info.message)) || info));
+    }
+    if (zugang === 'gesperrt' && !info.vomServer) return;   // erst glauben, wenn der Server die Liste schickt
+    zugang = 'ok';
+    clearTimeout(nochmalsTimer);
+    await neuLaden();
+    fussText();
+    const v = ansichtJetzt;
+    if (v === 'anmelden' || v === 'gesperrt') zeige('liste', {}, true);
+    else if (v === 'liste') zeigeListe();
+    else if (v === 'detail' || v === 'kasse') {
+      const g = jetztG();
+      if (!g) zeige('liste', {}, true);   // auf dem anderen Handy gelöscht
+      else if (v === 'detail' && g.geaendert !== detailStand) zeigeDetail(g);
+    }
+    fertig();
+    if (info.vomServer && !uebernommen) {
+      uebernommen = true;
+      D.altesUebernehmen().then(n => {
+        if (n) melde(n === 1 ? '1 Gutschein von diesem Handy übernommen' : `${n} Gutscheine von diesem Handy übernommen`);
+      }, e => { uebernommen = false; console.warn('Übernehmen:', e); });
+    }
+  }
+
+  let istFertig = false;
+  function fertig() {
+    if (istFertig) return;
+    istFertig = true;
+    zeigeTipp();
+    document.body.dataset.bereit = '1';
+  }
+
+  // ---------- Start ----------
+  history.replaceState({ v: 'liste' }, '');
+  if (window.Wolke.fehler) {
+    $('leer-text').textContent = window.Wolke.fehler + ' Bitte die App neu laden.';
+    $('leer').hidden = false;
+  } else {
+    D.konto(benutzer => {
+      clearTimeout(nochmalsTimer);
+      uebernommen = false;
+      alle = [];
+      if (!benutzer) {
+        zugang = 'abgemeldet';
+        anmeldeArt(false);
+        zeige('anmelden', {}, true);
+        return fertig();
+      }
+      zugang = 'ok';            // bis Firestore etwas anderes sagt
+      fussText();
+      D.starte(datenNeu);
+      zeige(ansichtJetzt === 'anmelden' || ansichtJetzt === 'gesperrt' ? 'liste' : ansichtJetzt, history.state || {}, true);
+    });
+  }
 })();
