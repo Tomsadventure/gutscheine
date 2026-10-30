@@ -7,6 +7,7 @@
   const D = window.Daten, S = window.Scanner, B = window.Strichcode, K = window.KI;
   const BALD_TAGE = 30;        // so viele Tage vor dem Ablauf gilt ein Gutschein als «läuft bald ab»
   const FOTO_MAX = 1600;       // Fotos werden höchstens so breit gespeichert
+  const SUCHE_AB = 5;          // ab so vielen Gutscheinen (aktiv + Archiv) gibt es das Suchfeld
   const FARBEN = ['#0E7C66', '#2563A8', '#B4542D', '#7A4FB3', '#A8326E', '#3E7D2B', '#94650A', '#2F6F7A'];
   const CODE_HINWEIS = 'Strichcode oder QR-Code ins Feld halten.<br>Er wird von selbst gelesen.';
 
@@ -141,6 +142,16 @@
   }
 
   // ---------- Liste ----------
+  // Suche: Laden, Codes, Notiz, Rabatt, Betrag, Webseite. Gross/klein und Umlaute egal (füssli = fussli = fuessli), Codes auch
+  // ohne Leerzeichen; mehrere Wörter = alle müssen vorkommen («orell 20»).
+  const ohneAkzente = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '');
+  function passt(g, woerter) {
+    const roh = [g.laden, g.code, g.onlineCode, g.notiz, g.rabatt, g.betrag === null || g.betrag === undefined ? '' : String(g.betrag), g.shop]
+      .filter(Boolean).join(' ').toLowerCase();
+    const text = [ohneAkzente(roh), roh.replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue'), roh.replace(/\s+/g, '')].join(' | ');
+    return woerter.every(w => text.includes(w));
+  }
+
   function zeigeListe() {
     const aktive = alle.filter(g => g.status !== 'archiv');
     const archiv = alle.filter(g => g.status === 'archiv');
@@ -156,12 +167,12 @@
     $('reiter-archiv').setAttribute('aria-selected', reiter === 'archiv');
 
     const suche = $('suche');
-    suche.hidden = alle.length < 8;
-    const q = suche.hidden ? '' : suche.value.trim().toLowerCase();
-    let liste = reiter === 'aktiv'
-      ? aktive.sort((a, b) => (a.gueltigBis || '9999').localeCompare(b.gueltigBis || '9999') || a.laden.localeCompare(b.laden, 'de'))
-      : archiv.sort((a, b) => (b.geaendert || '').localeCompare(a.geaendert || ''));
-    if (q) liste = liste.filter(g => [g.laden, g.notiz, g.code, g.onlineCode].some(x => (x || '').toLowerCase().includes(q)));
+    suche.hidden = alle.length < SUCHE_AB;
+    const woerter = suche.hidden ? [] : ohneAkzente(suche.value.toLowerCase()).split(/\s+/).filter(Boolean);
+    aktive.sort((a, b) => (a.gueltigBis || '9999').localeCompare(b.gueltigBis || '9999') || a.laden.localeCompare(b.laden, 'de'));
+    archiv.sort((a, b) => (b.geaendert || '').localeCompare(a.geaendert || ''));
+    // Beim Suchen beide Reiter: zuerst die aktiven, dann das Archiv (die Karte sagt «Eingelöst», «Im Archiv» …)
+    const liste = woerter.length ? aktive.concat(archiv).filter(g => passt(g, woerter)) : reiter === 'aktiv' ? aktive : archiv;
 
     const box = $('karten');
     box.textContent = '';
@@ -183,7 +194,7 @@
       box.appendChild(b);
     }
     $('leer').hidden = liste.length > 0;
-    $('leer-text').innerHTML = q ? 'Nichts gefunden.'
+    $('leer-text').innerHTML = woerter.length ? 'Nichts gefunden – auch nicht im Archiv.'
       : reiter === 'archiv' ? 'Das Archiv ist leer.<br>Hier landen aufgebrauchte Gutscheine.'
         : !D.stand().vomServer && navigator.onLine !== false ? 'Die Gutscheine werden geladen …'
           : 'Noch keine Gutscheine.<br>Tippe auf «Gutschein scannen».';
@@ -864,6 +875,13 @@
   $('reiter-aktiv').addEventListener('click', () => { reiter = 'aktiv'; zeigeListe(); });
   $('reiter-archiv').addEventListener('click', () => { reiter = 'archiv'; zeigeListe(); });
   $('suche').addEventListener('input', zeigeListe);
+  // Beim Suchen: Feld nach oben unter den Kopf (die Treffer sind dann über der Tastatur zu sehen), Knöpfe unten weg
+  $('suche').addEventListener('focus', () => {
+    document.body.classList.add('sucht');
+    const y = $('suche').getBoundingClientRect().top + window.scrollY - document.querySelector('.kopf').offsetHeight - 10;
+    window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+  });
+  $('suche').addEventListener('blur', () => document.body.classList.remove('sucht'));
   $('zurueck').addEventListener('click', zurueck);
   // Foto gross: «‹ Zurück» oder irgendwo antippen schliesst es
   $('foto-gross').addEventListener('click', () => { $('foto-gross').hidden = true; });

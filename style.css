@@ -82,6 +82,9 @@ body[data-view="liste"] .seite, body[data-view="scan"] .seite { padding-bottom: 
 .reiter span { font-weight: 800; color: var(--gruen); margin-left: 2px; }
 
 .suche { width: 100%; border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--card); }
+/* Suchfeld angetippt: Platz, damit es ganz nach oben rutschen kann; die Knöpfe unten verdecken keine Treffer */
+body.sucht #liste { padding-bottom: 100vh; }
+body.sucht .aktionen { display: none; }
 
 .karten { display: grid; gap: 10px; }
 .karte { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%;

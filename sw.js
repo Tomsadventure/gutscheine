@@ -1,5 +1,5 @@
 /* Offline: hält alle Dateien eines App-Stands auf dem Gerät. VERSION und FILES setzt Scripts/bauen.mjs ein. */
-const VERSION = '2026-10-30-3bea01e';
+const VERSION = '2026-10-30-3e3ec48';
 const FILES = ["./","app.js","daten.js","firebase-config.js","fonts/Nunito-Bold.woff2","fonts/Nunito-ExtraBold.woff2","fonts/Nunito-Regular.woff2","fonts/OFL.txt","icons/apple-touch-icon.png","icons/favicon.png","icons/icon-192.png","icons/icon-512.png","icons/icon-maskable-512.png","ki.js","lib/firebase/LICENSE.txt","lib/firebase/firebase.js","lib/zxing/LICENSE.txt","lib/zxing/reader.js","lib/zxing/writer.js","lib/zxing/zxing_reader.wasm","lib/zxing/zxing_writer.wasm","manifest.webmanifest","scan-worker.js","scanner.js","strichcode.js","style.css","wolke.js"];
 const CACHE = 'gutscheine-' + VERSION;
 
