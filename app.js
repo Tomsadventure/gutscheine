@@ -250,7 +250,7 @@
         setTimeout(() => {
           if (ansichtJetzt !== 'scan') return;
           entwurf = neuerEntwurf({ code: t.text, gelesen: t.format });
-          zeige('formular', {}, true);
+          zumFormular();
         }, 250);
       },
       fehler: e => scanFehler('Das Leseprogramm hatte einen Fehler (' + e.message + '). Du kannst ein Foto wählen oder die Nummer eintippen.'),
@@ -389,8 +389,8 @@
     entwurf = neuerEntwurf(t ? { code: t.text, gelesen: t.format } : {});
     if (k) kiUebernehmen(entwurf, k);
     for (const b of klein) entwurf.fotos.push({ blob: b, url: URL.createObjectURL(b) });
-    zeige('formular', {}, true);
     if (kiFehler) console.warn('KI:', kiFehler);
+    if (!await zumFormular()) return;
     if (k && entwurf.code) return;   // das Formular sagt oben schon «Die KI hat das Foto gelesen»
     melde(k ? 'Kein Code gefunden – bitte eintippen'
       : kiFehler ? 'Die KI hat nicht geantwortet – bitte selbst ausfüllen'
@@ -428,6 +428,35 @@
     if (ansichtJetzt !== 'scan' || !$('scan-fehler').hidden) return;
     if (document.hidden) S.stop(); else oeffneScanner();
   });
+
+  // ---------- Schon erfasst? ----------
+  // Gleicher Code oder Code für online (ohne Leerzeichen, gross/klein egal, auch im Archiv) → der vorhandene Gutschein
+  const codeSchluessel = c => (c || '').replace(/\s+/g, '').toUpperCase();
+  function gleicherGutschein(code, onlineCode, ausserId) {
+    const neu = [code, onlineCode].map(codeSchluessel).filter(c => c.length >= 4);
+    if (!neu.length) return null;
+    return alle.find(g => g.id !== ausserId && [g.code, g.onlineCode].map(codeSchluessel).some(c => neu.includes(c))) || null;
+  }
+  const schonText = g => `«${g.laden}» mit diesem Code ist schon ${g.status === 'archiv' ? 'im Archiv' : 'in der Liste'} ` +
+    `(${lage(g).text}).`;
+
+  // Nach dem Scannen ins Formular – ist der Gutschein schon erfasst, zuerst fragen (Wunsch 2026-10-30);
+  // «Zum vorhandenen» zeigt diesen statt des Formulars. false = nicht ins Formular.
+  async function zumFormular() {
+    const da = gleicherGutschein(entwurf.code, entwurf.onlineCode);
+    if (da) {
+      const nochmals = await frage('Schon erfasst', schonText(da) + ' Nochmals erfassen?', 'Nochmals erfassen', false, 'Zum vorhandenen');
+      if (ansichtJetzt !== 'scan') return false;
+      if (!nochmals) {
+        entwurf = null;
+        zeige('detail', { id: da.id }, true);
+        return false;
+      }
+      entwurf.nochmals = da.id;   // beim Speichern nicht nochmals fragen
+    }
+    zeige('formular', {}, true);
+    return true;
+  }
 
   // ---------- Formular ----------
   function neuerEntwurf(von) {
@@ -579,6 +608,11 @@
     const rest = restEin === null ? betrag : restEin;
     if (betrag !== null && rest > betrag) return formFehler('«Noch übrig» ist grösser als der Wert.', 'f-rest');
     if (shop && !/^https?:\/\/[^\s/]+\.[^\s]+$/i.test(shop)) return formFehler('Die Webseite bitte so eintragen: www.laden.ch', 'f-shop');
+    // Neu und von Hand eingetippt (oder Code geändert): schon erfasst? «Abbrechen» bleibt im Formular
+    if (!entwurf.id) {
+      const da = gleicherGutschein($('f-code').value, onlineCode);
+      if (da && entwurf.nochmals !== da.id && !await frage('Schon erfasst', schonText(da) + ' Trotzdem speichern?', 'Trotzdem speichern')) return;
+    }
 
     $('f-speichern').disabled = true;
     try {
@@ -771,11 +805,12 @@
   });
 
   // Frage mit zwei Knöpfen → true bei «ja»
-  function frage(titel, text, ja, gefahr) {
+  function frage(titel, text, ja, gefahr, nein) {
     const d = $('dlg-frage');
     $('q-titel').textContent = titel;
     $('q-text').textContent = text;
     $('q-ja').textContent = ja;
+    $('q-nein').textContent = nein || 'Abbrechen';
     $('q-ja').className = 'knopf' + (gefahr ? ' gefahr' : '');
     d.returnValue = '';
     d.showModal();
@@ -817,9 +852,11 @@
   $('reiter-archiv').addEventListener('click', () => { reiter = 'archiv'; zeigeListe(); });
   $('suche').addEventListener('input', zeigeListe);
   $('zurueck').addEventListener('click', zurueck);
+  // Foto gross: «‹ Zurück» oder irgendwo antippen schliesst es
   $('foto-gross').addEventListener('click', () => { $('foto-gross').hidden = true; });
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && (ansichtJetzt === 'scan' || ansichtJetzt === 'kasse')) zurueck();
+    if (e.key === 'Escape' && !$('foto-gross').hidden) $('foto-gross').hidden = true;
+    else if (e.key === 'Escape' && (ansichtJetzt === 'scan' || ansichtJetzt === 'kasse')) zurueck();
   });
 
   // ---------- Als App auf den Home-Bildschirm ----------

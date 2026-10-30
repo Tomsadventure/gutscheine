@@ -273,7 +273,11 @@ body[data-view="formular"] .seite { padding-bottom: 0; }
 .dlg .knopf.klein { justify-self: start; align-self: flex-start; }
 
 .foto-gross { position: fixed; inset: 0; z-index: 30; background: rgba(0, 0, 0, .9); display: grid; place-items: center;
-  padding: env(safe-area-inset-top) 8px env(safe-area-inset-bottom); cursor: zoom-out; }
+  padding: calc(68px + env(safe-area-inset-top)) 8px env(safe-area-inset-bottom); cursor: zoom-out; }
+/* Gut sichtbar über dem dunklen Hintergrund, an der Stelle von «Zurück» oben (Wunsch 2026-10-30: das alte war kaum zu sehen) */
+.foto-zu { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: var(--gut-l); min-height: 46px; padding: 10px 18px;
+  border: 0; border-radius: 999px; background: #fff; color: var(--gruen-tief); font: inherit; font-size: 17px; font-weight: 800;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .5); }
 .foto-gross img { max-width: 100%; max-height: 100%; object-fit: contain; }
 
 .meldung { position: fixed; left: 50%; top: calc(64px + env(safe-area-inset-top)); z-index: 40;
