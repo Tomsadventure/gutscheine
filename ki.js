@@ -10,6 +10,7 @@ window.KI = (function () {
 
   const PROMPT = 'Auf dem Foto ist ein Gutschein aus der Schweiz (Geschenkkarte, Wertgutschein, Rabatt-Code oder Ähnliches). ' +
     'Lies die Angaben heraus. Erfinde nichts: Was nicht auf dem Foto steht oder nicht lesbar ist, bleibt leer.';
+  const MEHRERE = ' Die Fotos zeigen verschiedene Seiten desselben Gutscheins (z. B. Vorder- und Rückseite): Fasse alles zu einem Gutschein zusammen.';
 
   const SCHEMA = {
     type: 'object',
@@ -73,9 +74,12 @@ window.KI = (function () {
 
   // Foto (Blob, JPEG) → Angaben; wirft bei Fehlern. Gemini antwortet meist in 3–9 s, bleibt aber ab und zu hängen
   // (2026-10-28 gemessen: etwa jede dritte Anfrage > 40 s) → nach VERSUCH_MS abbrechen und einmal neu fragen.
-  async function lesen(blob) {
+  // Mehrere Fotos (Blob-Liste) = Seiten desselben Gutscheins, in einer Anfrage.
+  async function lesen(fotos) {
+    const liste = Array.isArray(fotos) ? fotos : [fotos];
     const m = await holeModell();
-    const teile = [{ text: PROMPT }, { inlineData: { mimeType: blob.type || 'image/jpeg', data: await base64(blob) } }];
+    const teile = [{ text: liste.length > 1 ? PROMPT + MEHRERE : PROMPT }];
+    for (const b of liste) teile.push({ inlineData: { mimeType: b.type || 'image/jpeg', data: await base64(b) } });
     let fehler = null;
     for (let i = 0; i < VERSUCHE; i++) {
       let r;

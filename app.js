@@ -9,8 +9,6 @@
   const FOTO_MAX = 1600;       // Fotos werden höchstens so breit gespeichert
   const FARBEN = ['#0E7C66', '#2563A8', '#B4542D', '#7A4FB3', '#A8326E', '#3E7D2B', '#94650A', '#2F6F7A'];
   const CODE_HINWEIS = 'Strichcode oder QR-Code ins Feld halten.<br>Er wird von selbst gelesen.';
-  const fotoHinweis = () => 'Den ganzen Gutschein ins Bild nehmen.<br>' +
-    (K.bereit() ? 'Die KI füllt dann alles aus.' : 'Ohne Internet sucht die App nur den Strichcode.');
 
   const chfFormat = new Intl.NumberFormat('de-CH', { style: 'currency', currency: 'CHF' });
   const chf = n => chfFormat.format(n || 0);
@@ -194,23 +192,44 @@
   // ---------- Kamera ----------
   let zoomStufen = null, zoomAn = false, lichtAn = false;
   let scanArt = '';            // 'code' = Strichcode / QR im Rahmen, liest von selbst · 'foto' = ganzes Bild, runder Auslöser
+  let seiten = [];             // «Foto»: fotografierte Seiten (Blobs) des Gutscheins – Vorder-, Rückseite …
+  let lesung = null;           // { n, promise }: liest die ersten n Seiten schon, während man vielleicht weiter fotografiert
+
+  // Hinweis: bei «Strichcode / QR» unter dem Rahmen, bei «Foto» und beim Lesen oben neben «Abbrechen» (CSS zeigt den richtigen)
+  function setzeHinweis(html) { $('scan-hinweis').innerHTML = $('scan-info').innerHTML = html; }
+  function seitenHinweis() {
+    if (!seiten.length) {
+      return 'Ganzen Gutschein ins Bild nehmen – ' + (K.bereit() ? 'die KI füllt alles aus.' : 'ohne Internet nur Strichcode.');
+    }
+    return (seiten.length === 1 ? 'Seite 1 ist drin. Rückseite?' : `${seiten.length} Seiten sind drin. Noch eine?`) +
+      ' Nochmals auslösen, sonst «Fertig».';
+  }
 
   function zeigeScanArt(art) {
     scanArt = art;
     const foto = art === 'foto';
     $('scanner').classList.toggle('art-foto', foto);
     for (const b of $('scan-art').querySelectorAll('button')) b.setAttribute('aria-selected', b.dataset.art === art);
-    $('scan-hinweis').innerHTML = foto ? fotoHinweis() : CODE_HINWEIS;
+    setzeHinweis(foto ? seitenHinweis() : CODE_HINWEIS);
     if (foto && zoomAn) zoomUm();
     $('scan-zoom').hidden = foto || !zoomStufen;
     S.suchen(!foto);
   }
 
+  // Die fotografierten Seiten unten links (letzte Seite als Bildchen, Anzahl) und «Fertig»
+  function zeigeSeiten() {
+    const n = seiten.length, img = $('scan-seiten').querySelector('img');
+    if (img.src) URL.revokeObjectURL(img.src);
+    if (n) img.src = URL.createObjectURL(seiten[n - 1]); else img.removeAttribute('src');
+    $('scan-seiten').querySelector('b').textContent = n || '';
+    $('scan-seiten').hidden = $('scan-fertig').hidden = !n;
+    if (scanArt === 'foto' && !$('scanner').classList.contains('liest')) setzeHinweis(seitenHinweis());
+  }
+
   function oeffneScanner() {
     $('scanner').hidden = false;
     $('scan-fehler').hidden = true;
-    $('scanner').classList.remove('mit-fehler');
-    $('scanner').classList.remove('liest');
+    $('scanner').classList.remove('mit-fehler', 'liest', 'blitz');
     zeigeBild(null);
     $('scan-hinweis').hidden = false;
     $('scan-licht').hidden = $('scan-zoom').hidden = true;
@@ -220,6 +239,7 @@
     zoomStufen = null;
     // Zuletzt gewählte Art; beim ersten Mal «Foto» (liest alles), ohne Internet «Strichcode / QR»
     zeigeScanArt(scanArt || lies('scanart') || (K.bereit() ? 'foto' : 'code'));
+    zeigeSeiten();   // nach einem App-Wechsel sind schon fotografierte Seiten noch da
     K.vorbereiten();
     S.starte($('video'), $('scan-rahmen'), {
       gefunden: t => {
@@ -245,6 +265,9 @@
     S.stop();
     $('scanner').hidden = true;
     zeigeBild(null);
+    seiten = [];
+    lesung = null;
+    zeigeSeiten();
   }
 
   // Beim Lesen das Foto statt der Kamera zeigen
@@ -290,36 +313,58 @@
     $('scan-zoom').classList.toggle('an', zoomAn);
   }
   $('scan-zoom').addEventListener('click', zoomUm);
+  // Gewählte Fotos (auch mehrere = mehrere Seiten): gleich lesen
   $('scan-foto').addEventListener('change', e => {
-    const datei = e.target.files[0];
+    const dateien = [...e.target.files];
     e.target.value = '';
-    if (datei) fotoVerarbeiten(datei);
+    if (!dateien.length) return;
+    seiten.push(...dateien);
+    seitenFertig();
   });
+  // Runder Auslöser: eine Seite mehr; lesen schon im Hintergrund – bei nur einer Seite ist «Fertig» dann gleich fertig
   $('scan-knipsen').addEventListener('click', async () => {
     let bild;
     try { bild = await S.standbild(); } catch (e) { return melde(e.message); }
-    fotoVerarbeiten(bild);
+    $('scanner').classList.remove('blitz');
+    void $('scanner').offsetWidth;   // Blitz nochmals abspielen
+    $('scanner').classList.add('blitz');
+    seiten.push(bild);
+    zeigeSeiten();
+    lesung = { n: seiten.length, promise: leseSeiten(seiten.slice()) };
   });
+  $('scan-fertig').addEventListener('click', seitenFertig);
 
-  // Foto (gewählt oder runder Auslöser): Strichcode suchen und – falls eingerichtet – die KI lesen lassen, dann ins Formular
-  async function fotoVerarbeiten(datei) {
+  // Jede Seite nur einmal verkleinern und nach Strichcodes durchsuchen
+  const kleinVon = new WeakMap(), strichcodeVon = new WeakMap();
+  const einmal = (karte, b, fn) => { if (!karte.has(b)) karte.set(b, fn(b)); return karte.get(b); };
+
+  // Seiten lesen: Strichcode (erste Seite mit einem) und – falls eingerichtet – die KI mit allen Seiten zusammen
+  function leseSeiten(liste) {
+    const klein = Promise.all(liste.map(b => einmal(kleinVon, b, x => S.verkleinern(x, FOTO_MAX).catch(() => x))));
+    const strich = (async () => {
+      for (const b of liste) {
+        const t = await einmal(strichcodeVon, b, x => S.fotoLesen(x).catch(() => null));
+        if (t) return t;
+      }
+      return null;
+    })();
+    const ki = klein.then(k => (K.bereit() ? K.lesen(k).then(x => ({ x }), e => ({ fehler: (e && e.message) || String(e) })) : {}));
+    return Promise.all([strich, ki, klein]).then(([t, k, kl]) => ({ t, k: k.x || null, kiFehler: k.fehler || '', klein: kl }));
+  }
+
+  // «Fertig» oder Fotos gewählt: alle Seiten lesen, dann ins Formular (mit allen Seiten als Fotos)
+  async function seitenFertig() {
+    if (!seiten.length) return;
+    const liste = seiten.slice();
     S.stop();
     $('scanner').classList.add('liest');
-    zeigeBild(datei);
-    $('scan-hinweis').hidden = false;
-    $('scan-hinweis').textContent = 'Foto wird gelesen …';
-    const klein = await S.verkleinern(datei, FOTO_MAX).catch(() => null);
-    let kiFehler = '';
-    const kiLesen = async () => {
-      if (!K.bereit()) return null;
-      $('scan-hinweis').textContent = 'Die KI liest den Gutschein …';
-      try { return await K.lesen(klein || datei); } catch (e) { kiFehler = (e && e.message) || String(e); return null; }
-    };
-    const [t, k] = await Promise.all([S.fotoLesen(datei).catch(() => null), kiLesen()]);
+    zeigeBild(liste[0]);
+    setzeHinweis(K.bereit() ? 'Die KI liest den Gutschein …' : 'Foto wird gelesen …');
+    const { t, k, kiFehler, klein } = await (lesung && lesung.n === liste.length ? lesung.promise : leseSeiten(liste));
     if (ansichtJetzt !== 'scan') return;
     entwurf = neuerEntwurf(t ? { code: t.text, gelesen: t.format } : {});
     if (k) kiUebernehmen(entwurf, k);
-    if (klein) entwurf.fotos.push({ blob: klein, url: URL.createObjectURL(klein) });
+    for (const b of klein) entwurf.fotos.push({ blob: b, url: URL.createObjectURL(b) });
     zeige('formular', {}, true);
     if (kiFehler) console.warn('KI:', kiFehler);
     if (k && entwurf.code) return;   // das Formular sagt oben schon «Die KI hat das Foto gelesen»
@@ -345,6 +390,9 @@
     if (!e.gelesen && k.code) {
       e.code = k.code;
       e.format = k.nurOnline ? '' : B.vorschlag(k.code);
+    } else if (k.code && /^\d+$/.test(e.code) && /[A-Za-z]/.test(k.code)) {
+      // z. B. Orell Füssli: Strichcode (Ziffern) für die Kasse, gedruckter Code zum Eintippen im Webshop → in die Notiz
+      e.notiz = ['Code für online: ' + k.code, e.notiz].filter(Boolean).join('\n');
     }
   }
   document.addEventListener('visibilitychange', () => {

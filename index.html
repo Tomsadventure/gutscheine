@@ -16,8 +16,8 @@
   <link rel="icon" href="icons/favicon.png" type="image/png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="preload" href="fonts/Nunito-ExtraBold.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="style.css?v=2026-10-28-0eb29d6">
-  <script>window.BUILD = '2026-10-28-0eb29d6';</script>
+  <link rel="stylesheet" href="style.css?v=2026-10-30-962b482">
+  <script>window.BUILD = '2026-10-30-962b482';</script>
 </head>
 <body data-view="liste">
   <header class="kopf">
@@ -215,6 +215,7 @@
     <div id="scan-rahmen" class="scan-rahmen"><i></i></div>
     <div class="scan-oben">
       <button type="button" id="scan-zu" class="scan-knopf">Abbrechen</button>
+      <p id="scan-info" class="scan-info" role="status"></p>
     </div>
     <p id="scan-hinweis" class="scan-hinweis"></p>
     <div id="scan-fehler" class="scan-fehler" hidden><p id="scan-fehler-text"></p></div>
@@ -223,11 +224,15 @@
         <button type="button" role="tab" data-art="code" aria-selected="false">Strichcode / QR</button>
         <button type="button" role="tab" data-art="foto" aria-selected="true">Foto</button>
       </div>
-      <button type="button" id="scan-knipsen" class="scan-ausloeser" aria-label="Foto machen"></button>
+      <div class="scan-ausloese-zeile">
+        <div id="scan-seiten" class="scan-seiten" hidden><img alt="Fotografierte Seite"><b></b></div>
+        <button type="button" id="scan-knipsen" class="scan-ausloeser" aria-label="Foto machen"></button>
+        <button type="button" id="scan-fertig" class="scan-knopf scan-fertig" hidden>Fertig</button>
+      </div>
       <div class="scan-zeile">
         <button type="button" id="scan-licht" class="scan-knopf" hidden>Licht</button>
         <button type="button" id="scan-zoom" class="scan-knopf" hidden>Zoom 2×</button>
-        <label class="scan-knopf datei">Foto wählen<input type="file" accept="image/*" id="scan-foto"></label>
+        <label class="scan-knopf datei">Foto wählen<input type="file" accept="image/*" multiple id="scan-foto"></label>
         <button type="button" id="scan-hand" class="scan-knopf">Eintippen</button>
       </div>
     </div>
@@ -285,13 +290,13 @@
   </datalist>
 
   <noscript><p style="padding:24px;font-family:sans-serif">Diese App braucht JavaScript.</p></noscript>
-  <script src="firebase-config.js?v=2026-10-28-0eb29d6" defer></script>
-  <script src="lib/firebase/firebase.js?v=2026-10-28-0eb29d6" defer></script>
-  <script src="wolke.js?v=2026-10-28-0eb29d6" defer></script>
-  <script src="daten.js?v=2026-10-28-0eb29d6" defer></script>
-  <script src="ki.js?v=2026-10-28-0eb29d6" defer></script>
-  <script src="scanner.js?v=2026-10-28-0eb29d6" defer></script>
-  <script src="strichcode.js?v=2026-10-28-0eb29d6" defer></script>
-  <script src="app.js?v=2026-10-28-0eb29d6" defer></script>
+  <script src="firebase-config.js?v=2026-10-30-962b482" defer></script>
+  <script src="lib/firebase/firebase.js?v=2026-10-30-962b482" defer></script>
+  <script src="wolke.js?v=2026-10-30-962b482" defer></script>
+  <script src="daten.js?v=2026-10-30-962b482" defer></script>
+  <script src="ki.js?v=2026-10-30-962b482" defer></script>
+  <script src="scanner.js?v=2026-10-30-962b482" defer></script>
+  <script src="strichcode.js?v=2026-10-30-962b482" defer></script>
+  <script src="app.js?v=2026-10-30-962b482" defer></script>
 </body>
 </html>

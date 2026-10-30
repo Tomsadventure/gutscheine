@@ -147,9 +147,10 @@ window.Scanner = (function () {
   }
 
   // Sucht einen Strichcode auf einem Foto oder Bildschirmfoto. Ergebnis: { text, format } oder null.
+  // Eigene Leinwand: mehrere Seiten können gleichzeitig gelesen werden.
   async function fotoLesen(blob) {
-    const c = await aufLeinwand(blob, MAX_FOTO, leinwand);
-    const treffer = await lies(ctx.getImageData(0, 0, c.width, c.height), true);
+    const c = await aufLeinwand(blob, MAX_FOTO, document.createElement('canvas'));
+    const treffer = await lies(c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height), true);
     return treffer[0] || null;
   }
 
