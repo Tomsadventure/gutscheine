@@ -166,9 +166,8 @@
     $('reiter-aktiv').setAttribute('aria-selected', reiter === 'aktiv');
     $('reiter-archiv').setAttribute('aria-selected', reiter === 'archiv');
 
-    const suche = $('suche');
-    suche.hidden = alle.length < SUCHE_AB;
-    const woerter = suche.hidden ? [] : ohneAkzente(suche.value.toLowerCase()).split(/\s+/).filter(Boolean);
+    $('suche-zeile').hidden = alle.length < SUCHE_AB;
+    const woerter = $('suche-zeile').hidden ? [] : ohneAkzente($('suche').value.toLowerCase()).split(/\s+/).filter(Boolean);
     aktive.sort((a, b) => (a.gueltigBis || '9999').localeCompare(b.gueltigBis || '9999') || a.laden.localeCompare(b.laden, 'de'));
     archiv.sort((a, b) => (b.geaendert || '').localeCompare(a.geaendert || ''));
     // Beim Suchen beide Reiter: zuerst die aktiven, dann das Archiv (die Karte sagt «Eingelöst», «Im Archiv» …)
@@ -875,13 +874,24 @@
   $('reiter-aktiv').addEventListener('click', () => { reiter = 'aktiv'; zeigeListe(); });
   $('reiter-archiv').addEventListener('click', () => { reiter = 'archiv'; zeigeListe(); });
   $('suche').addEventListener('input', zeigeListe);
-  // Beim Suchen: Feld nach oben unter den Kopf (die Treffer sind dann über der Tastatur zu sehen), Knöpfe unten weg
-  $('suche').addEventListener('focus', () => {
-    document.body.classList.add('sucht');
-    const y = $('suche').getBoundingClientRect().top + window.scrollY - document.querySelector('.kopf').offsetHeight - 10;
-    window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+  // Suchmodus, solange das Feld angetippt ist oder Text drin hat (CSS blendet Guthaben, Reiter und Knöpfe unten aus, das Feld steht
+  // oben). «Abbrechen» und Esc leeren die Suche und schliessen die Tastatur; Enter schliesst nur die Tastatur, die Treffer bleiben.
+  const suchModus = () => document.body.classList.toggle('sucht', document.activeElement === $('suche') || !!$('suche').value);
+  function sucheZu() {
+    $('suche').value = '';
+    $('suche').blur();
+    suchModus();
+    zeigeListe();
+  }
+  $('suche').addEventListener('focus', () => { suchModus(); window.scrollTo(0, 0); });
+  $('suche').addEventListener('blur', suchModus);
+  $('suche').addEventListener('keydown', e => {
+    if (e.key === 'Enter') $('suche').blur();
+    else if (e.key === 'Escape') sucheZu();
   });
-  $('suche').addEventListener('blur', () => document.body.classList.remove('sucht'));
+  // Den Knopf antippen soll das Feld nicht vorher verlassen (sonst verschwindet er, bevor er gedrückt ist)
+  for (const ereignis of ['pointerdown', 'mousedown']) $('suche-zu').addEventListener(ereignis, e => e.preventDefault());
+  $('suche-zu').addEventListener('click', sucheZu);
   $('zurueck').addEventListener('click', zurueck);
   // Foto gross: «‹ Zurück» oder irgendwo antippen schliesst es
   $('foto-gross').addEventListener('click', () => { $('foto-gross').hidden = true; });
