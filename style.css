@@ -179,6 +179,8 @@ body[data-view="formular"] .seite { padding-bottom: 0; }
 .code-karte { border: 0; width: 100%; padding: 16px 14px 12px; display: grid; gap: 6px; justify-items: center; text-align: center; }
 .code-text { font-family: var(--mono); font-size: 19px; font-weight: 700; letter-spacing: .04em; overflow-wrap: anywhere; }
 .code-karte small { color: var(--gruen-tief); font-weight: 700; font-size: 14px; }
+.code-karte .code-titel { color: var(--ink-soft); }
+.feld-link { align-self: flex-start; margin-top: -10px; }
 .d-zeile { display: flex; gap: 8px; flex-wrap: wrap; }
 .d-zeile .knopf { flex: 1 1 auto; }
 .d-notiz { margin: 0; background: var(--card); border-radius: 12px; padding: 10px 12px; white-space: pre-wrap; }

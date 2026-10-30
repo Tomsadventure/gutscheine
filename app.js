@@ -161,7 +161,7 @@
     let liste = reiter === 'aktiv'
       ? aktive.sort((a, b) => (a.gueltigBis || '9999').localeCompare(b.gueltigBis || '9999') || a.laden.localeCompare(b.laden, 'de'))
       : archiv.sort((a, b) => (b.geaendert || '').localeCompare(a.geaendert || ''));
-    if (q) liste = liste.filter(g => [g.laden, g.notiz, g.code].some(x => (x || '').toLowerCase().includes(q)));
+    if (q) liste = liste.filter(g => [g.laden, g.notiz, g.code, g.onlineCode].some(x => (x || '').toLowerCase().includes(q)));
 
     const box = $('karten');
     box.textContent = '';
@@ -178,7 +178,7 @@
       b.querySelector('.karte-betrag b').textContent = g.art === 'rabatt' ? g.rabatt || 'Rabatt'
         : g.rest === null ? 'Gutschein' : chf(g.rest);
       b.querySelector('.karte-betrag small').textContent = g.nurOnline ? 'online'
-        : g.betrag !== null && g.rest !== null && g.rest !== g.betrag ? 'von ' + chf(g.betrag) : '';
+        : g.betrag !== null && g.rest !== null && g.rest !== g.betrag ? 'von ' + chf(g.betrag) : g.onlineCode ? 'auch online' : '';
       b.addEventListener('click', () => zeige('detail', { id: g.id }));
       box.appendChild(b);
     }
@@ -414,9 +414,14 @@
     if (!e.gelesen && k.code) {
       e.code = k.code;
       e.format = k.nurOnline ? '' : B.vorschlag(k.code);
-    } else if (k.code && /^\d+$/.test(e.code) && /[A-Za-z]/.test(k.code)) {
-      // z. B. Orell Füssli: Strichcode (Ziffern) für die Kasse, gedruckter Code zum Eintippen im Webshop → in die Notiz
-      e.notiz = ['Code für online: ' + k.code, e.notiz].filter(Boolean).join('\n');
+    }
+    // Eigener Code für den Webshop, z. B. Orell Füssli: Strichcode (Ziffern) für die Kasse, gedruckter Code für online.
+    // Sieht die KI ihn nicht als eigenen Code, aber ihr Code hat Buchstaben und der gescannte Strichcode nur Ziffern: derselbe Fall.
+    let online = k.onlineCode;
+    if (!online && e.gelesen && k.code && /^\d+$/.test(e.code) && /[A-Za-z]/.test(k.code)) online = k.code;
+    if (online && online !== e.code && !k.nurOnline) {
+      e.onlineCode = online;
+      e.onlineFeld = true;
     }
   }
   document.addEventListener('visibilitychange', () => {
@@ -429,7 +434,7 @@
     const code = (von.code || '').trim();
     return {
       id: null, laden: '', art: 'wert', betrag: null, rest: null, rabatt: '', gueltigBis: '', pin: '', notiz: '', fotos: [],
-      nurOnline: false, shop: '', ki: false,
+      nurOnline: false, shop: '', onlineCode: '', onlineFeld: false, ki: false,
       code, gelesen: von.gelesen || '', format: von.gelesen ? B.zeichenbar(von.gelesen) : B.vorschlag(code), formatGewaehlt: false,
     };
   }
@@ -437,6 +442,7 @@
     return {
       id: g.id, laden: g.laden, art: g.art || 'wert', betrag: g.betrag, rest: g.rest, rabatt: g.rabatt || '', gueltigBis: g.gueltigBis,
       pin: g.pin, notiz: g.notiz, code: g.code, nurOnline: !!g.nurOnline, shop: g.shop || '', ki: false,
+      onlineCode: g.onlineCode || '', onlineFeld: !!g.onlineCode,
       format: g.format, gelesen: '', formatGewaehlt: true, fotos: (g.fotos || []).map(id => ({ id })),
     };
   }
@@ -455,9 +461,10 @@
     $('f-notiz').value = e.notiz;
     $('f-online').checked = e.nurOnline;
     $('f-shop').value = e.shop;
+    $('f-online-code').value = e.onlineCode;
     $('f-ki').hidden = !e.ki;
     zeigeArt(e.art);
-    $('f-shop-feld').hidden = !e.nurOnline;
+    zeigeOnlineFelder();
     const sel = $('f-format');
     sel.textContent = '';
     sel.add(new Option('Kein Strichcode (nur Nummer)', ''));
@@ -501,10 +508,23 @@
     $('f-rabatt-feld').hidden = art !== 'rabatt';
   }
   for (const b of $('f-art').querySelectorAll('button')) b.addEventListener('click', () => zeigeArt(b.dataset.art));
+  // «Code für online» nur, wenn es einen gibt oder man ihn hinzufügt – bei «Nur online» ist der Code selbst der Online-Code.
+  // Die Webseite zum Einlösen braucht es in beiden Fällen.
+  function zeigeOnlineFelder() {
+    const nur = $('f-online').checked;
+    $('f-online-code-feld').hidden = nur || !entwurf.onlineFeld;
+    $('f-online-code-neu').hidden = nur || entwurf.onlineFeld;
+    $('f-shop-feld').hidden = !nur && !entwurf.onlineFeld;
+  }
+  $('f-online-code-neu').addEventListener('click', () => {
+    entwurf.onlineFeld = true;
+    zeigeOnlineFelder();
+    $('f-online-code').focus();
+  });
   // Nur online: Webseite statt Strichcode an der Kasse
   $('f-online').addEventListener('change', () => {
     const on = $('f-online').checked;
-    $('f-shop-feld').hidden = !on;
+    zeigeOnlineFelder();
     if (!entwurf.formatGewaehlt && !entwurf.gelesen) {
       $('f-format').value = on ? '' : B.vorschlag($('f-code').value);
       vorschauBald(0);
@@ -550,7 +570,8 @@
     const betrag = art === 'wert' ? betragLesen($('f-betrag').value) : null;
     const restEin = art === 'wert' ? betragLesen($('f-rest').value) : null;
     const nurOnline = $('f-online').checked;
-    let shop = nurOnline ? $('f-shop').value.trim() : '';
+    const onlineCode = nurOnline ? '' : $('f-online-code').value.trim();
+    let shop = nurOnline || onlineCode ? $('f-shop').value.trim() : '';
     if (shop && !/^https?:\/\//i.test(shop)) shop = 'https://' + shop;
     if (!laden) return formFehler('Bitte den Laden oder Anbieter eintragen.', 'f-laden');
     if (betrag === false) return formFehler('Den Wert bitte als Zahl eintragen, z. B. 50 oder 25.50.', 'f-betrag');
@@ -567,7 +588,7 @@
         : { id: D.neueId(), status: 'aktiv', erstellt: jetzt, verlauf: [{ datum: jetzt, art: 'erfasst', betrag, rest }] };
       if (alt && alt.rest !== rest) g.verlauf.push({ datum: jetzt, art: 'korrigiert', rest });
       Object.assign(g, {
-        laden, art, betrag, rest, rabatt: art === 'rabatt' ? $('f-rabatt').value.trim() : '', nurOnline, shop,
+        laden, art, betrag, rest, rabatt: art === 'rabatt' ? $('f-rabatt').value.trim() : '', nurOnline, shop, onlineCode,
         gueltigBis: $('f-bis').value || '', code: $('f-code').value.trim(), format: $('f-format').value,
         pin: $('f-pin').value.trim(), notiz: $('f-notiz').value.trim(), geaendert: jetzt,
       });
@@ -612,7 +633,11 @@
         if (s && ansichtJetzt !== 'liste' && $('d-laden').textContent === g.laden) $('d-strichcode').innerHTML = s;
       });
     }
+    // Eigener Code für den Webshop: eigene Karte (antippen = kopieren), der Knopf kopiert dann ausdrücklich die Kassen-Nummer
+    $('d-online-karte').hidden = !g.onlineCode;
+    $('d-online-code').textContent = g.onlineCode || '';
     $('d-kopieren').hidden = !g.code;
+    $('d-kopieren').textContent = g.onlineCode ? 'Kassen-Nummer kopieren' : 'Code kopieren';
     $('d-pin').hidden = !g.pin;
     $('d-pin').textContent = 'PIN zeigen';
     const link = /^https?:\/\//i.test(g.code || '');
@@ -661,10 +686,10 @@
 
   const jetztG = () => alle.find(x => x.id === (history.state && history.state.id));
 
-  async function kopiere() {
+  async function kopiere(text, meldung) {
     try {
-      await navigator.clipboard.writeText(jetztG().code);
-      melde('Code kopiert');
+      await navigator.clipboard.writeText(text);
+      melde(meldung);
     } catch {
       melde('Kopieren geht hier nicht');
     }
@@ -672,9 +697,13 @@
   // Online-Code ohne Strichcode: an der Kasse braucht ihn niemand – antippen kopiert ihn
   $('d-code-karte').addEventListener('click', () => {
     const g = jetztG();
-    if (g.nurOnline && !g.format) kopiere(); else zeige('kasse', { id: g.id });
+    if (g.nurOnline && !g.format) kopiere(g.code, 'Code kopiert'); else zeige('kasse', { id: g.id });
   });
-  $('d-kopieren').addEventListener('click', kopiere);
+  $('d-kopieren').addEventListener('click', () => {
+    const g = jetztG();
+    kopiere(g.code, g.onlineCode ? 'Kassen-Nummer kopiert' : 'Code kopiert');
+  });
+  $('d-online-karte').addEventListener('click', () => kopiere(jetztG().onlineCode, 'Code für online kopiert'));
   $('d-pin').addEventListener('click', () => {
     const b = $('d-pin');
     b.textContent = b.textContent === 'PIN zeigen' ? 'PIN: ' + jetztG().pin : 'PIN zeigen';

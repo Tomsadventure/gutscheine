@@ -21,14 +21,15 @@ window.KI = (function () {
       art: { type: 'string', enum: ['wert', 'rabatt'], description: 'wert = Guthaben in Franken (Geschenkkarte, Wertgutschein); rabatt = Prozent oder Abzug auf einen Einkauf.' },
       betrag: { type: 'string', description: 'Nur bei art=wert: Wert in Franken als Zahl ohne Währung, z. B. «50». Sonst leer.' },
       rabatt: { type: 'string', description: 'Nur bei art=rabatt: kurz, z. B. «20 %», «CHF 10», «2 für 1». Sonst leer.' },
-      code: { type: 'string', description: 'Gutschein-Code oder Kartennummer genau wie gedruckt, ohne Leerzeichen. Keine Telefon-, Artikel- oder Kundennummern. Leer, wenn keiner zu sehen ist.' },
+      code: { type: 'string', description: 'Gutschein-Code oder Kartennummer genau wie gedruckt, ohne Leerzeichen. Hat der Gutschein einen Strichcode mit Nummer: diese Nummer. Keine Telefon-, Artikel- oder Kundennummern. Leer, wenn keiner zu sehen ist.' },
+      onlineCode: { type: 'string', description: 'Nur wenn zusätzlich zum Code ein anderer Code zum Einlösen im Webshop aufgedruckt ist (z. B. Strichcode-Nummer für den Laden und ein Buchstaben-Code für online): dieser Code, ohne Leerzeichen. Sonst leer.' },
       pin: { type: 'string', description: 'PIN, falls aufgedruckt. Sonst leer.' },
       gueltigBis: { type: 'string', description: 'Letzter gültiger Tag als JJJJ-MM-TT. Leer, wenn kein Datum steht.' },
       nurOnline: { type: 'boolean', description: 'true, wenn er nur online (im Webshop) einlösbar ist.' },
       shop: { type: 'string', description: 'Webadresse zum Einlösen mit https://, wenn aufgedruckt; sonst die offizielle Schweizer Webseite des Anbieters, nur wenn du sie sicher kennst; sonst leer.' },
       bedingungen: { type: 'string', description: 'Die wichtigsten Bedingungen als ein kurzer deutscher Satz, z. B. «Einmal gültig, nicht für Versandkosten.». Leer, wenn keine.' },
     },
-    required: ['laden', 'art', 'betrag', 'rabatt', 'code', 'pin', 'gueltigBis', 'nurOnline', 'shop', 'bedingungen'],
+    required: ['laden', 'art', 'betrag', 'rabatt', 'code', 'onlineCode', 'pin', 'gueltigBis', 'nurOnline', 'shop', 'bedingungen'],
   };
 
   // Ist die KI eingerichtet und das Handy online?
@@ -58,15 +59,21 @@ window.KI = (function () {
     const text = v => (typeof v === 'string' ? v.trim() : '');
     const datum = text(k.gueltigBis);
     const shop = text(k.shop);
+    const nurOnline = k.nurOnline === true;
+    let code = text(k.code).replace(/\s+/g, ''), onlineCode = text(k.onlineCode).replace(/\s+/g, '');
+    // Nur online: der Code ist der Online-Code – kein zweiter
+    if (nurOnline && !code) code = onlineCode;
+    if (nurOnline || onlineCode === code) onlineCode = '';
     return {
       laden: text(k.laden),
       art: k.art === 'rabatt' ? 'rabatt' : 'wert',
       betrag: text(k.betrag),
       rabatt: text(k.rabatt),
-      code: text(k.code).replace(/\s+/g, ''),
+      code,
+      onlineCode,
       pin: text(k.pin),
       gueltigBis: /^\d{4}-\d{2}-\d{2}$/.test(datum) && !isNaN(new Date(datum)) ? datum : '',
-      nurOnline: k.nurOnline === true,
+      nurOnline,
       shop: /^https?:\/\/[^\s/]+\.[^\s]+$/i.test(shop) ? shop : '',
       bedingungen: text(k.bedingungen),
     };
