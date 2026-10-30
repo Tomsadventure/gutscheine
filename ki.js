@@ -4,8 +4,10 @@
 window.KI = (function () {
   'use strict';
   const W = window.Wolke, E = W.E || {};
-  const VERSUCH_MS = 15000;    // eine Anfrage an Gemini
-  const VERSUCHE = 2;
+  // geduld: so lange auf die erste Antwort warten, dann zusätzlich eine schnelle Reserve-Anfrage; gesamt: dann aufgeben.
+  // E.kiZeit nur für die Browser-Tests (kürzer).
+  const zeit = Object.assign({ geduld: 12000, gesamt: 45000 }, E.kiZeit);
+  const RESERVE_DENKEN = 'MINIMAL';   // die Reserve denkt kaum nach: schneller, liest fast gleich gut (2026-10-30)
   let modell = null;           // Promise des eingerichteten Modells
 
   const PROMPT = 'Auf dem Foto ist ein Gutschein aus der Schweiz (Geschenkkarte, Wertgutschein, Rabatt-Code oder Ähnliches). ' +
@@ -38,13 +40,11 @@ window.KI = (function () {
       const F = W.F;
       // Agent Platform (früher Vertex AI) an einem festen Ort; ohne Ort die Gemini Developer API (braucht dort Prepay-Guthaben)
       const ai = F.getAI(W.app, { backend: E.ort ? new F.AgentPlatformBackend(E.ort) : new F.GoogleAIBackend() });
-      modell = Promise.resolve(F.getGenerativeModel(ai, {
-        model: E.modell,
-        generationConfig: { responseMimeType: 'application/json', responseJsonSchema: SCHEMA, thinkingConfig: { thinkingLevel: E.denken || 'LOW' } },
-      }));
+      modell = Promise.resolve(F.getGenerativeModel(ai, { model: E.modell, generationConfig: konfig(E.denken || 'LOW') }));
     }
     return modell;
   }
+  const konfig = denken => ({ responseMimeType: 'application/json', responseJsonSchema: SCHEMA, thinkingConfig: { thinkingLevel: denken } });
 
   const base64 = blob => new Promise((ok, nein) => {
     const r = new FileReader();
@@ -72,21 +72,31 @@ window.KI = (function () {
     };
   }
 
-  // Foto (Blob, JPEG) → Angaben; wirft bei Fehlern. Gemini antwortet meist in 3–9 s, bleibt aber ab und zu hängen
-  // (2026-10-28 gemessen: etwa jede dritte Anfrage > 40 s) → nach VERSUCH_MS abbrechen und einmal neu fragen.
-  // Mehrere Fotos (Blob-Liste) = Seiten desselben Gutscheins, in einer Anfrage.
-  async function lesen(fotos) {
+  // Foto (Blob, JPEG) → Angaben; wirft bei Fehlern. Mehrere Fotos (Blob-Liste) = Seiten desselben Gutscheins, in einer Anfrage.
+  // Gemini antwortet meist in 2–4 s, braucht aber ab und zu viel länger (2026-10-30 am iPhone: zwei Seiten 29 s, am PC dieselbe
+  // Karte 2,5 s). Darum: nach zeit.geduld zusätzlich die Reserve fragen, die erste läuft weiter – die schnellere Antwort gilt.
+  // Schlägt die erste gleich fehl, kommt die Reserve sofort. Höchstens zwei Anfragen. signal: abbrechen (z. B. neue Seite dazu).
+  async function lesen(fotos, signal) {
     const liste = Array.isArray(fotos) ? fotos : [fotos];
     const m = await holeModell();
     const teile = [{ text: liste.length > 1 ? PROMPT + MEHRERE : PROMPT }];
     for (const b of liste) teile.push({ inlineData: { mimeType: b.type || 'image/jpeg', data: await base64(b) } });
-    let fehler = null;
-    for (let i = 0; i < VERSUCHE; i++) {
-      let r;
-      try { r = await m.generateContent(teile, { timeout: VERSUCH_MS }); } catch (e) { fehler = e; continue; }
-      return aufraeumen(JSON.parse(r.response.text()));
-    }
-    throw fehler;
+    const halt = new AbortController(), start = Date.now();
+    if (signal) signal.addEventListener('abort', () => halt.abort());
+    const frage = denken => m.generateContent({ contents: [{ role: 'user', parts: teile }], generationConfig: konfig(denken) },
+      { timeout: Math.max(1000, zeit.gesamt - (Date.now() - start)), signal: halt.signal })
+      .then(r => aufraeumen(JSON.parse(r.response.text())));
+    return new Promise((ok, nein) => {
+      let offen = 0, reserve = false, uhr = 0;
+      const fertig = x => { clearTimeout(uhr); halt.abort(); ok(x); };
+      const frag = denken => {
+        offen++;
+        frage(denken).then(fertig, e => { offen--; if (!reserve && !halt.signal.aborted) frageReserve(); else if (!offen) nein(e); });
+      };
+      const frageReserve = () => { clearTimeout(uhr); if (!reserve && !halt.signal.aborted) { reserve = true; frag(RESERVE_DENKEN); } };
+      frag(E.denken || 'LOW');
+      uhr = setTimeout(frageReserve, zeit.geduld);
+    });
   }
 
   // Beim Öffnen der Kamera: das Modell schon einrichten
@@ -94,5 +104,5 @@ window.KI = (function () {
     if (bereit()) holeModell().catch(() => {});
   }
 
-  return { bereit, lesen, vorbereiten };
+  return { bereit, lesen, vorbereiten, zeit };
 })();

@@ -193,7 +193,8 @@
   let zoomStufen = null, zoomAn = false, lichtAn = false;
   let scanArt = '';            // 'code' = Strichcode / QR im Rahmen, liest von selbst · 'foto' = ganzes Bild, runder Auslöser
   let seiten = [];             // «Foto»: fotografierte Seiten (Blobs) des Gutscheins – Vorder-, Rückseite …
-  let lesung = null;           // { n, promise }: liest die ersten n Seiten schon, während man vielleicht weiter fotografiert
+  let lesung = null;           // leseSeiten(): liest die ersten n Seiten schon, während man vielleicht weiter fotografiert
+  let ohneKi = null;           // beim Warten auf die KI: «Selbst ausfüllen» gedrückt
 
   // Hinweis: bei «Strichcode / QR» unter dem Rahmen, bei «Foto» und beim Lesen oben neben «Abbrechen» (CSS zeigt den richtigen)
   function setzeHinweis(html) { $('scan-hinweis').innerHTML = $('scan-info').innerHTML = html; }
@@ -230,6 +231,7 @@
     $('scanner').hidden = false;
     $('scan-fehler').hidden = true;
     $('scanner').classList.remove('mit-fehler', 'liest', 'blitz');
+    $('scan-ohne-ki').hidden = true;
     zeigeBild(null);
     $('scan-hinweis').hidden = false;
     $('scan-licht').hidden = $('scan-zoom').hidden = true;
@@ -266,6 +268,7 @@
     $('scanner').hidden = true;
     zeigeBild(null);
     seiten = [];
+    if (lesung) lesung.halt.abort();
     lesung = null;
     zeigeSeiten();
   }
@@ -330,9 +333,11 @@
     $('scanner').classList.add('blitz');
     seiten.push(bild);
     zeigeSeiten();
-    lesung = { n: seiten.length, promise: leseSeiten(seiten.slice()) };
+    if (lesung) lesung.halt.abort();   // die KI-Anfrage mit weniger Seiten braucht es nicht mehr
+    lesung = leseSeiten(seiten.slice());
   });
   $('scan-fertig').addEventListener('click', seitenFertig);
+  $('scan-ohne-ki').addEventListener('click', () => { if (ohneKi) ohneKi(); });
 
   // Jede Seite nur einmal verkleinern und nach Strichcodes durchsuchen
   const kleinVon = new WeakMap(), strichcodeVon = new WeakMap();
@@ -340,6 +345,7 @@
 
   // Seiten lesen: Strichcode (erste Seite mit einem) und – falls eingerichtet – die KI mit allen Seiten zusammen
   function leseSeiten(liste) {
+    const halt = new AbortController();
     const klein = Promise.all(liste.map(b => einmal(kleinVon, b, x => S.verkleinern(x, FOTO_MAX).catch(() => x))));
     const strich = (async () => {
       for (const b of liste) {
@@ -348,8 +354,8 @@
       }
       return null;
     })();
-    const ki = klein.then(k => (K.bereit() ? K.lesen(k).then(x => ({ x }), e => ({ fehler: (e && e.message) || String(e) })) : {}));
-    return Promise.all([strich, ki, klein]).then(([t, k, kl]) => ({ t, k: k.x || null, kiFehler: k.fehler || '', klein: kl }));
+    const ki = klein.then(k => (K.bereit() ? K.lesen(k, halt.signal).then(x => ({ x }), e => ({ fehler: (e && e.message) || String(e) })) : {}));
+    return { n: liste.length, halt, strich, klein, ki };
   }
 
   // «Fertig» oder Fotos gewählt: alle Seiten lesen, dann ins Formular (mit allen Seiten als Fotos)
@@ -359,8 +365,26 @@
     S.stop();
     $('scanner').classList.add('liest');
     zeigeBild(liste[0]);
-    setzeHinweis(K.bereit() ? 'Die KI liest den Gutschein …' : 'Foto wird gelesen …');
-    const { t, k, kiFehler, klein } = await (lesung && lesung.n === liste.length ? lesung.promise : leseSeiten(liste));
+    const kiLiest = K.bereit();
+    setzeHinweis(kiLiest ? 'Die KI liest den Gutschein …' : 'Foto wird gelesen …');
+    if (!lesung || lesung.n !== liste.length) {
+      if (lesung) lesung.halt.abort();
+      lesung = leseSeiten(liste);
+    }
+    // Braucht die KI länger als sonst: Sekunden zeigen und «Selbst ausfüllen» anbieten
+    const l = lesung, start = Date.now();
+    const uhr = setInterval(() => {
+      if (!kiLiest || Date.now() - start < K.zeit.geduld) return;
+      setzeHinweis(`Die KI braucht länger als sonst … ${Math.round((Date.now() - start) / 1000)}&nbsp;s`);
+      $('scan-ohne-ki').hidden = false;
+    }, 1000);
+    const selbst = new Promise(ok => { ohneKi = () => ok({ selbst: true }); });
+    const [t, klein, antwort] = await Promise.all([l.strich, l.klein, Promise.race([l.ki, selbst])]);
+    clearInterval(uhr);
+    ohneKi = null;
+    $('scan-ohne-ki').hidden = true;
+    if (antwort.selbst) l.halt.abort();
+    const k = antwort.x || null, kiFehler = antwort.fehler || '';
     if (ansichtJetzt !== 'scan') return;
     entwurf = neuerEntwurf(t ? { code: t.text, gelesen: t.format } : {});
     if (k) kiUebernehmen(entwurf, k);
