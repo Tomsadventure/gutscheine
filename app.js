@@ -354,7 +354,8 @@
       }
       return null;
     })();
-    const ki = klein.then(k => (K.bereit() ? K.lesen(k, halt.signal).then(x => ({ x }), e => ({ fehler: (e && e.message) || String(e) })) : {}));
+    // Die KI bekommt die Fotos in voller Grösse (ki.js macht daraus das ganze Bild und vier Ausschnitte)
+    const ki = K.bereit() ? K.lesen(liste, halt.signal).then(x => ({ x }), e => ({ fehler: (e && e.message) || String(e) })) : Promise.resolve({});
     return { n: liste.length, halt, strich, klein, ki };
   }
 
@@ -409,6 +410,8 @@
     e.nurOnline = k.nurOnline;
     e.shop = k.shop;
     if (k.gueltigBis) e.gueltigBis = k.gueltigBis;
+    // Neu erfasst und schon abgelaufen? Meist hat die KI die Jahreszahl falsch gelesen (Tchibo, Bergzeit 2026-10-30) → Hinweis
+    e.datumPruefen = !!k.gueltigBis && tageBis(k.gueltigBis) < 0;
     if (k.pin) e.pin = k.pin;
     if (k.bedingungen) e.notiz = k.bedingungen;
     if (!e.gelesen && k.code) {
@@ -485,6 +488,8 @@
     $('f-rest').value = e.rest !== null && e.rest !== e.betrag ? zahlText(e.rest) : '';
     $('f-rabatt').value = e.rabatt;
     $('f-bis').value = e.gueltigBis;
+    $('f-bis').classList.toggle('pruefen', !!e.datumPruefen);
+    $('f-bis-hinweis').hidden = !e.datumPruefen;
     $('f-code').value = e.code;
     $('f-pin').value = e.pin;
     $('f-notiz').value = e.notiz;
@@ -528,6 +533,14 @@
     vorschauBald(250);
   });
   $('f-format').addEventListener('change', () => { entwurf.formatGewaehlt = true; vorschauBald(0); });
+  // Datum angepasst (oder bewusst so gelassen und geändert): kein Hinweis mehr
+  for (const ereignis of ['input', 'change']) {   // Safari meldet beim Datum nicht immer beides
+    $('f-bis').addEventListener(ereignis, () => {
+      entwurf.datumPruefen = false;
+      $('f-bis').classList.remove('pruefen');
+      $('f-bis-hinweis').hidden = true;
+    });
+  }
 
   // Guthaben in Franken oder Rabatt (Prozent, «CHF 10 ab 50» …): andere Felder
   function zeigeArt(art) {

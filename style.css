@@ -181,6 +181,8 @@ body[data-view="formular"] .seite { padding-bottom: 0; }
 .code-karte small { color: var(--gruen-tief); font-weight: 700; font-size: 14px; }
 .code-karte .code-titel { color: var(--ink-soft); }
 .feld-link { align-self: flex-start; margin-top: -10px; }
+.feld-warnung { color: var(--bald); font-weight: 700; font-size: 14px; }
+.feld input.pruefen { border-color: var(--bald); background: #FFF6E8; }
 .d-zeile { display: flex; gap: 8px; flex-wrap: wrap; }
 .d-zeile .knopf { flex: 1 1 auto; }
 .d-notiz { margin: 0; background: var(--card); border-radius: 12px; padding: 10px 12px; white-space: pre-wrap; }

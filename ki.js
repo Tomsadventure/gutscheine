@@ -13,6 +13,9 @@ window.KI = (function () {
   const PROMPT = 'Auf dem Foto ist ein Gutschein aus der Schweiz (Geschenkkarte, Wertgutschein, Rabatt-Code oder Ähnliches). ' +
     'Lies die Angaben heraus. Erfinde nichts: Was nicht auf dem Foto steht oder nicht lesbar ist, bleibt leer.';
   const MEHRERE = ' Die Fotos zeigen verschiedene Seiten desselben Gutscheins (z. B. Vorder- und Rückseite): Fasse alles zu einem Gutschein zusammen.';
+  const VIERTEL = ' Nach jedem Foto folgen vier vergrösserte Ausschnitte davon (oben links, oben rechts, unten links, unten rechts), damit du ' +
+    'auch Kleingedrucktes lesen kannst – das sind keine weiteren Seiten. Lies Datum und Jahreszahl genau.';
+  const FOTO_MAX = 1600, VIERTEL_MAX = 1280;   // ganzes Foto bzw. Ausschnitte für die KI (Punkte)
 
   const SCHEMA = {
     type: 'object',
@@ -79,15 +82,21 @@ window.KI = (function () {
     };
   }
 
-  // Foto (Blob, JPEG) → Angaben; wirft bei Fehlern. Mehrere Fotos (Blob-Liste) = Seiten desselben Gutscheins, in einer Anfrage.
+  // Foto (Blob, möglichst in voller Grösse) → Angaben; wirft bei Fehlern. Mehrere Fotos (Blob-Liste) = Seiten desselben Gutscheins,
+  // in einer Anfrage. Jede Seite geht verkleinert (FOTO_MAX) und als vier Ausschnitte (VIERTEL_MAX) mit.
   // Gemini antwortet meist in 2–4 s, braucht aber ab und zu viel länger (2026-10-30 am iPhone: zwei Seiten 29 s, am PC dieselbe
   // Karte 2,5 s). Darum: nach zeit.geduld zusätzlich die Reserve fragen, die erste läuft weiter – die schnellere Antwort gilt.
   // Schlägt die erste gleich fehl, kommt die Reserve sofort. Höchstens zwei Anfragen. signal: abbrechen (z. B. neue Seite dazu).
   async function lesen(fotos, signal) {
     const liste = Array.isArray(fotos) ? fotos : [fotos];
     const m = await holeModell();
-    const teile = [{ text: liste.length > 1 ? PROMPT + MEHRERE : PROMPT }];
-    for (const b of liste) teile.push({ inlineData: { mimeType: b.type || 'image/jpeg', data: await base64(b) } });
+    const S = window.Scanner;
+    const teile = [{ text: (liste.length > 1 ? PROMPT + MEHRERE : PROMPT) + VIERTEL }];
+    for (const b of liste) {
+      for (const x of [await S.verkleinern(b, FOTO_MAX), ...await S.viertel(b, VIERTEL_MAX)]) {
+        teile.push({ inlineData: { mimeType: 'image/jpeg', data: await base64(x) } });
+      }
+    }
     const halt = new AbortController(), start = Date.now();
     if (signal) signal.addEventListener('abort', () => halt.abort());
     const frage = denken => m.generateContent({ contents: [{ role: 'user', parts: teile }], generationConfig: konfig(denken) },

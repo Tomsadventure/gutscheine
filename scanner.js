@@ -52,7 +52,9 @@ window.Scanner = (function () {
     }
     const s = await navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      // 4K, wo es geht: das Standbild (Art «Foto») ist dann scharf genug für Kleingedrucktes (Tchibo 2026-10-30: mit Full HD las die
+      // KI die Jahreszahl falsch). Strichcodes liest die Schleife trotzdem verkleinert (MAX_LIVE).
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } },
     });
     if (!laeuft) { s.getTracks().forEach(t => t.stop()); return; }
     strom = s;
@@ -170,5 +172,23 @@ window.Scanner = (function () {
     return new Promise(ok => c.toBlob(b => ok(b || blob), 'image/jpeg', 0.82));
   }
 
-  return { starte, stop, licht, zoom, suchen, fotoLesen, standbild, verkleinern };
+  // Vier Viertel des Fotos (oben links, oben rechts, unten links, unten rechts; etwas überlappend), je höchstens max Punkte (JPEG).
+  // Für die KI: Gemini rechnet jedes Bild auf dieselbe Grösse herunter (2026-10-30 gemessen: 1077 Tokens bei 1600 und 3072 Punkten) –
+  // als Viertel sieht sie Kleingedrucktes etwa doppelt so scharf.
+  async function viertel(blob, max) {
+    const ganz = await aufLeinwand(blob, 2 * max, document.createElement('canvas'));
+    const w = Math.round(ganz.width * 0.55), h = Math.round(ganz.height * 0.55);
+    const teile = [];
+    for (const [x, y] of [[0, 0], [ganz.width - w, 0], [0, ganz.height - h], [ganz.width - w, ganz.height - h]]) {
+      const c = document.createElement('canvas');
+      const f = Math.min(1, max / Math.max(w, h));
+      c.width = Math.round(w * f);
+      c.height = Math.round(h * f);
+      c.getContext('2d').drawImage(ganz, x, y, w, h, 0, 0, c.width, c.height);
+      teile.push(await new Promise(ok => c.toBlob(b => ok(b), 'image/jpeg', 0.82)));
+    }
+    return teile.filter(Boolean);
+  }
+
+  return { starte, stop, licht, zoom, suchen, fotoLesen, standbild, verkleinern, viertel };
 })();
