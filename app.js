@@ -155,12 +155,6 @@
   function zeigeListe() {
     const aktive = alle.filter(g => g.status !== 'archiv');
     const archiv = alle.filter(g => g.status === 'archiv');
-    const nutzbar = aktive.filter(g => lage(g).k !== 'abgelaufen');
-    const bald = aktive.filter(g => lage(g).k === 'bald').length;
-    $('summe-betrag').textContent = chf(nutzbar.reduce((s, g) => s + (g.rest || 0), 0));
-    $('summe-text').textContent = !aktive.length ? 'Noch keine Gutscheine'
-      : [`${nutzbar.length} ${nutzbar.length === 1 ? 'Gutschein' : 'Gutscheine'}`,
-        bald ? `${bald} ${bald === 1 ? 'läuft' : 'laufen'} bald ab` : ''].filter(Boolean).join(' · ');
     $('anzahl-aktiv').textContent = aktive.length || '';
     $('anzahl-archiv').textContent = archiv.length || '';
     $('reiter-aktiv').setAttribute('aria-selected', reiter === 'aktiv');
@@ -878,7 +872,7 @@
   $('reiter-aktiv').addEventListener('click', () => { reiter = 'aktiv'; zeigeListe(); });
   $('reiter-archiv').addEventListener('click', () => { reiter = 'archiv'; zeigeListe(); });
   $('suche').addEventListener('input', zeigeListe);
-  // Suchmodus, solange das Feld angetippt ist oder Text drin hat (CSS blendet Guthaben, Reiter und Knöpfe unten aus, das Feld steht
+  // Suchmodus, solange das Feld angetippt ist oder Text drin hat (CSS blendet Tipp, Reiter und Knöpfe unten aus, das Feld steht
   // oben). «Abbrechen» und Esc leeren die Suche und schliessen die Tastatur; Enter schliesst nur die Tastatur, die Treffer bleiben.
   const suchModus = () => document.body.classList.toggle('sucht', document.activeElement === $('suche') || !!$('suche').value);
   function sucheZu() {
