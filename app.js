@@ -411,6 +411,8 @@
   // Was die KI gelesen hat, ins Formular; ein gescannter Strichcode bleibt (der ist genauer)
   function kiUebernehmen(e, k) {
     e.ki = true;
+    // Welches Modell genau gelesen hat (Wunsch 2026-10-31); «Schnellmodus» = die Reserve-Anfrage mit kaum Nachdenken
+    e.kiModell = (k.modell || 'Gemini') + (k.reserve ? ', Schnellmodus' : '');
     if (k.laden) e.laden = k.laden;
     e.art = k.art;
     if (k.art === 'wert') {
@@ -507,6 +509,7 @@
     $('f-shop').value = e.shop;
     $('f-online-code').value = e.onlineCode;
     $('f-ki').hidden = !e.ki;
+    $('f-ki').textContent = `Die KI (Google ${e.kiModell || 'Gemini'}) hat das Foto gelesen. Bitte prüfen.`;
     zeigeArt(e.art);
     zeigeOnlineFelder();
     const sel = $('f-format');
@@ -642,7 +645,8 @@
       const jetzt = new Date().toISOString();
       const alt = entwurf.id ? alle.find(x => x.id === entwurf.id) : null;
       const g = alt ? Object.assign({}, alt, { verlauf: alt.verlauf.slice() })
-        : { id: D.neueId(), status: 'aktiv', erstellt: jetzt, verlauf: [{ datum: jetzt, art: 'erfasst', betrag, rest }] };
+        : { id: D.neueId(), status: 'aktiv', erstellt: jetzt,
+          verlauf: [Object.assign({ datum: jetzt, art: 'erfasst', betrag, rest }, entwurf.ki ? { ki: entwurf.kiModell } : {})] };
       if (alt && alt.rest !== rest) g.verlauf.push({ datum: jetzt, art: 'korrigiert', rest });
       Object.assign(g, {
         laden, art, betrag, rest, rabatt: art === 'rabatt' ? $('f-rabatt').value.trim() : '', nurOnline, shop, onlineCode,
@@ -717,7 +721,7 @@
       const li = document.createElement('li');
       const wann = new Date(e.datum).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric' });
       const was = e.art === 'erfasst' ? 'Erfasst' + (e.betrag !== null && e.betrag !== undefined ? ', Wert ' + chf(e.betrag)
-        : g.art === 'rabatt' && g.rabatt ? ', ' + g.rabatt : '')
+        : g.art === 'rabatt' && g.rabatt ? ', ' + g.rabatt : '') + (e.ki ? ' · gelesen von ' + e.ki : '')
         : e.art === 'eingeloest' ? (e.betrag ? `${chf(e.betrag)} eingelöst, noch ${chf(e.rest)}` : 'Eingelöst')
           : e.art === 'korrigiert' ? 'Restguthaben geändert' + (e.rest !== null ? ' auf ' + chf(e.rest) : '')
             : e.art === 'archiv' ? 'Ins Archiv gelegt' : 'Wieder aktiv';

@@ -57,6 +57,13 @@ window.KI = (function () {
     r.readAsDataURL(blob);
   });
 
+  // «gemini-3.5-flash-lite» → «Gemini 3.5 Flash-Lite»
+  const gross = w => w.charAt(0).toUpperCase() + w.slice(1);
+  function modellName(id) {
+    const [marke, version, ...rest] = String(id || '').split('-');
+    return [gross(marke), version, rest.map(gross).join('-')].filter(Boolean).join(' ');
+  }
+
   // Antwort prüfen: nur erwartete Felder, sauber geschrieben
   function aufraeumen(k) {
     const text = v => (typeof v === 'string' ? v.trim() : '');
@@ -99,9 +106,11 @@ window.KI = (function () {
     }
     const halt = new AbortController(), start = Date.now();
     if (signal) signal.addEventListener('abort', () => halt.abort());
+    // Dazu, welches Modell genau gelesen hat (meldet Google in der Antwort) und ob es die Reserve war
     const frage = denken => m.generateContent({ contents: [{ role: 'user', parts: teile }], generationConfig: konfig(denken) },
       { timeout: Math.max(1000, zeit.gesamt - (Date.now() - start)), signal: halt.signal })
-      .then(r => aufraeumen(JSON.parse(r.response.text())));
+      .then(r => Object.assign(aufraeumen(JSON.parse(r.response.text())),
+        { modell: modellName(r.response.modelVersion || E.modell), reserve: denken === RESERVE_DENKEN }));
     return new Promise((ok, nein) => {
       let offen = 0, reserve = false, uhr = 0;
       const fertig = x => { clearTimeout(uhr); halt.abort(); ok(x); };
