@@ -4,7 +4,8 @@
    { id, laden, art: 'wert' | 'rabatt' (fehlt bei alten = 'wert'), betrag, rest (CHF, bei Rabatt null), rabatt: '20 %',
      nurOnline, shop: 'https://…', code, format, onlineCode (eigener Code für den Webshop, sonst leer/fehlt), pin,
      gueltigBis: 'JJJJ-MM-TT', notiz, fotos: [Foto-Id], status: 'aktiv' | 'archiv',
-     verlauf: [{ datum, art: 'erfasst' | 'eingeloest' | 'korrigiert' | 'archiv' | 'aktiv', betrag, rest }], erstellt, geaendert }
+     autoArchiv: 'JJJJ-MM-TT' (bei diesem Ablaufdatum hat die App ihn von selbst ins Archiv gelegt),
+     verlauf: [{ datum, art: 'erfasst' | 'eingeloest' | 'korrigiert' | 'archiv' | 'aktiv', betrag, rest, abgelaufen }], erstellt, geaendert }
    Ein Foto (Sammlung «fotos»): { typ: 'image/jpeg', daten: Bytes } – ein Dokument darf höchstens 1 MiB gross sein. */
 window.Daten = (function () {
   'use strict';

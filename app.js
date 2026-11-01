@@ -60,7 +60,8 @@
   function lage(g) {
     if (g.status === 'archiv') {
       const eingeloest = g.verlauf.some(e => e.art === 'eingeloest');
-      return { k: 'archiv', text: g.rest === 0 ? 'Aufgebraucht' : eingeloest && g.rest === null ? 'Eingelöst' : 'Im Archiv' };
+      return { k: 'archiv', text: g.rest === 0 ? 'Aufgebraucht' : eingeloest && g.rest === null ? 'Eingelöst'
+        : g.gueltigBis && tageBis(g.gueltigBis) < 0 ? 'Abgelaufen am ' + datum(g.gueltigBis) : 'Im Archiv' };
     }
     if (!g.gueltigBis) return { k: 'ok', text: 'Ohne Ablaufdatum' };
     const t = tageBis(g.gueltigBis);
@@ -99,6 +100,25 @@
   }
 
   async function neuLaden() { alle = await D.alle(); }
+
+  // Abgelaufen (gestern oder früher) → von selbst ins Archiv (Wunsch 2026-11-01). autoArchiv merkt sich das Datum, bei dem die
+  // App ihn verschoben hat: holt man ihn mit «Wieder aktiv» zurück, bleibt er aktiv, bis man das Datum ändert und es wieder
+  // abläuft. Nur mit der Liste vom Server – ein Handy mit altem Stand (ohne Internet) soll keine neueren Änderungen überschreiben.
+  const verschoben = new Set();   // id|Datum – schon erledigt (ein Stand, der kurz danach noch eintrifft, löst es nicht nochmals aus)
+  function abgelaufeneInsArchiv() {
+    if (zugang !== 'ok' || !D.stand().vomServer) return 0;
+    const weg = alle.filter(g => g.status !== 'archiv' && g.gueltigBis && tageBis(g.gueltigBis) < 0 && g.autoArchiv !== g.gueltigBis &&
+      !verschoben.has(g.id + '|' + g.gueltigBis));
+    const jetzt = new Date().toISOString();
+    for (const g of weg) verschoben.add(g.id + '|' + g.gueltigBis);
+    for (const alt of weg) {
+      D.speichern(Object.assign({}, alt, { status: 'archiv', autoArchiv: alt.gueltigBis, geaendert: jetzt,
+        verlauf: alt.verlauf.concat({ datum: jetzt, art: 'archiv', abgelaufen: true }) }));
+    }
+    if (weg.length) melde(weg.length === 1 ? `«${weg[0].laden}» ist abgelaufen – liegt jetzt im Archiv`
+      : `${weg.length} abgelaufene Gutscheine liegen jetzt im Archiv`);
+    return weg.length;
+  }
 
   // ---------- Navigation (mit dem Zurück des Handys) ----------
   function zeige(v, daten, ersetzen) {
@@ -188,7 +208,7 @@
     }
     $('leer').hidden = liste.length > 0;
     $('leer-text').innerHTML = woerter.length ? 'Nichts gefunden – auch nicht im Archiv.'
-      : reiter === 'archiv' ? 'Das Archiv ist leer.<br>Hier landen aufgebrauchte Gutscheine.'
+      : reiter === 'archiv' ? 'Das Archiv ist leer.<br>Hier landen aufgebrauchte und abgelaufene Gutscheine.'
         : !D.stand().vomServer && navigator.onLine !== false ? 'Die Gutscheine werden geladen …'
           : 'Noch keine Gutscheine.<br>Tippe auf «Gutschein scannen».';
   }
@@ -434,6 +454,10 @@
     }
   }
   document.addEventListener('visibilitychange', () => {
+    // Am nächsten Tag wieder geöffnet: inzwischen Abgelaufene ins Archiv (Firestore meldet dafür nichts Neues)
+    if (!document.hidden && abgelaufeneInsArchiv()) {
+      neuLaden().then(() => { if (ansichtJetzt === 'liste') zeigeListe(); else if (ansichtJetzt === 'detail' && jetztG()) zeigeDetail(jetztG()); });
+    }
     if (ansichtJetzt !== 'scan' || !$('scan-fehler').hidden) return;
     if (document.hidden) S.stop(); else oeffneScanner();
   });
@@ -653,10 +677,12 @@
       g.fotos = ids;
       await D.speichern(g);
       await neuLaden();
+      if (abgelaufeneInsArchiv()) await neuLaden();   // mit einem schon vergangenen Datum gespeichert → gleich ins Archiv
+      const insArchiv = g.status !== 'archiv' && (alle.find(x => x.id === g.id) || g).status === 'archiv';
       const warNeu = !alt;
       entwurf = null;
       if (warNeu) zeige('detail', { id: g.id }, true); else zurueck();
-      melde('Gespeichert');
+      melde(insArchiv ? 'Gespeichert – schon abgelaufen, liegt im Archiv' : 'Gespeichert');
     } catch (e) {
       $('f-speichern').disabled = false;
       formFehler('Speichern ging nicht: ' + ((e && e.message) || e));
@@ -718,7 +744,7 @@
         : g.art === 'rabatt' && g.rabatt ? ', ' + g.rabatt : '') + (e.ki ? ' · gelesen von ' + e.ki : '')
         : e.art === 'eingeloest' ? (e.betrag ? `${chf(e.betrag)} eingelöst, noch ${chf(e.rest)}` : 'Eingelöst')
           : e.art === 'korrigiert' ? 'Restguthaben geändert' + (e.rest !== null ? ' auf ' + chf(e.rest) : '')
-            : e.art === 'archiv' ? 'Ins Archiv gelegt' : 'Wieder aktiv';
+            : e.art === 'archiv' ? (e.abgelaufen ? 'Abgelaufen – von selbst ins Archiv' : 'Ins Archiv gelegt') : 'Wieder aktiv';
       li.innerHTML = '<small></small><span></span>';
       li.querySelector('small').textContent = wann;
       li.querySelector('span').textContent = was;
@@ -1036,6 +1062,7 @@
     zugang = 'ok';
     clearTimeout(nochmalsTimer);
     await neuLaden();
+    if (abgelaufeneInsArchiv()) await neuLaden();
     fussText();
     const v = ansichtJetzt;
     if (v === 'anmelden' || v === 'gesperrt') zeige('liste', {}, true);
